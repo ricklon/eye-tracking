@@ -15,6 +15,8 @@
       >
       <div class="header-actions">
         <span id="status" role="status">Camera off</span
+        ><button id="explore-toggle" aria-pressed="false">
+          Explore tracking</button
         ><button id="visitor">Visitor view</button
         ><button id="fullscreen">Fullscreen ↗</button>
       </div>
@@ -39,6 +41,155 @@
           <span><i></i> Software preview</span
           ><span id="scene-state">Idle</span>
         </div>
+      </section>
+      <section
+        class="panel exploration"
+        aria-label="Explore how eye tracking works"
+      >
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">BEHIND THE WINK</span>
+            <h1>See what I see.</h1>
+          </div>
+          <span class="pill">Always live · no echo</span>
+          <button id="explore-camera" class="primary">Start camera</button>
+        </div>
+        <p class="hint">
+          A face becomes a map of points. Eye corners give us a reference; iris
+          and eyelid points tell us what moves. Try it with your own face.
+        </p>
+        <ol class="tracking-steps">
+          <li>
+            <b>01 · Find the face</b
+            ><span id="face-step">Waiting for camera</span>
+          </li>
+          <li>
+            <b>02 · Locate the eyes</b
+            ><span id="eye-step">Eyes unavailable</span>
+          </li>
+          <li>
+            <b>03 · Read the movement</b
+            ><span id="signal-step">No current eye signals</span>
+          </li>
+        </ol>
+        <canvas
+          id="tracking-map"
+          width="960"
+          height="600"
+          aria-label="Mirrored camera frame with face and eye landmarks"
+        ></canvas>
+        <div class="map-toolbar">
+          <label
+            ><input id="overlay-face" type="checkbox" checked /> Face map & eye
+            line</label
+          ><label
+            ><input id="overlay-eyes" type="checkbox" checked /> Eye
+            measurements</label
+          ><span id="explore-age">No fresh frame</span>
+        </div>
+        <p class="hint">
+          The box follows face position; the eye line shows tilt in the image.
+          These are not physical head angles. The overlay uses the exact frame
+          that was measured.
+        </p>
+        <div class="legend">
+          <span class="iris-key">● Iris center</span
+          ><span class="upper-key">● Upper lid</span
+          ><span class="lower-key">● Lower lid</span><span>● Eye corners</span>
+        </div>
+        <div class="eye-labs">
+          <article>
+            <div class="section-heading">
+              <h2>Your left eye</h2>
+              <span id="left-status" class="eye-status">Unavailable</span>
+            </div>
+            <canvas
+              id="left-zoom"
+              width="440"
+              height="220"
+              aria-label="Anatomical left eye magnified with measurements"
+            ></canvas>
+            <p id="left-explanation" class="hint">
+              Find this eye in the camera.
+            </p>
+            <p id="left-signals" class="signal-values"></p>
+            <p id="left-gaze" class="hint"></p>
+            <div class="iris-color">
+              <span
+                id="left-color-swatch"
+                class="color-swatch"
+                aria-hidden="true"
+              ></span>
+              <div>
+                <span class="eyebrow">VISIBLE IRIS COLOR · ESTIMATE</span>
+                <p id="left-color-label">Color unavailable</p>
+              </div>
+            </div>
+            <p id="left-color-reason" class="hint">
+              Wait for a clear, open eye in the camera.
+            </p>
+          </article>
+          <article>
+            <div class="section-heading">
+              <h2>Your right eye</h2>
+              <span id="right-status" class="eye-status">Unavailable</span>
+            </div>
+            <canvas
+              id="right-zoom"
+              width="440"
+              height="220"
+              aria-label="Anatomical right eye magnified with measurements"
+            ></canvas>
+            <p id="right-explanation" class="hint">
+              Find this eye in the camera.
+            </p>
+            <p id="right-signals" class="signal-values"></p>
+            <p id="right-gaze" class="hint"></p>
+            <div class="iris-color">
+              <span
+                id="right-color-swatch"
+                class="color-swatch"
+                aria-hidden="true"
+              ></span>
+              <div>
+                <span class="eyebrow">VISIBLE IRIS COLOR · ESTIMATE</span>
+                <p id="right-color-label">Color unavailable</p>
+              </div>
+            </div>
+            <p id="right-color-reason" class="hint">
+              Wait for a clear, open eye in the camera.
+            </p>
+          </article>
+        </div>
+        <details>
+          <summary>Where does the iris color come from?</summary>
+          <p class="hint">
+            MediaPipe locates the iris; our pixel sampler estimates its visible
+            color. We sample a ring around the center, aiming to skip the pupil,
+            lids, dark shadows, and bright reflections. The swatch is a
+            camera-color estimate, not a measurement of natural pigmentation.
+            Lighting, white balance, contact lenses, and a dilated pupil can
+            change it. Come closer and use soft front lighting; compare the
+            swatch with what you see.
+          </p>
+        </details>
+        <details>
+          <summary>How do these signals become a blink?</summary>
+          <p class="hint">
+            The gap is the distance between the upper and lower lid samples,
+            measured relative to eye width. A very small gap closes the
+            illustrated eye. MediaPipe’s blink score supplies another clue; it
+            is not a confidence percentage. Several fresh open samples are
+            needed to reopen it, which reduces flicker. Signals can disagree, so
+            “uncertain” is useful feedback. The iris estimate is retained during
+            closure, but it should not steer gaze.
+          </p>
+          <p class="hint">
+            Everything here uses anatomical left and right. Only the pictures
+            are mirrored. The playful eyes also apply smoothing and optional
+            echo; these inspection readings do not.
+          </p>
+        </details>
       </section>
       <aside class="staff">
         <section class="panel control">
@@ -68,7 +219,7 @@
             first use.
           </p>
         </section>
-        <section class="panel control">
+        <section class="panel control playful-controls">
           <h2>Make it playful</h2>
           <label for="mode">Movement</label
           ><select id="mode">
@@ -89,6 +240,48 @@
           />
           <p class="hint">
             Blink or look away, then watch your movement a moment later.
+          </p>
+        </section>
+        <section class="panel control exploration challenge-panel">
+          <span class="eyebrow">THE WINK LAB</span>
+          <h2>Can you teach us something?</h2>
+          <label for="challenge-select">Pick a challenge</label
+          ><select id="challenge-select"></select>
+          <p id="challenge-instruction" class="hint"></p>
+          <button id="challenge-start" class="primary" disabled>
+            Try this challenge
+          </button>
+          <p id="challenge-detected" class="challenge-detected">Your turn</p>
+          <p id="challenge-progress" class="hint" role="status"></p>
+          <div class="feedback-buttons">
+            <button id="challenge-matched" disabled>Yes, that matched</button
+            ><button id="challenge-mismatch" disabled>
+              It missed / got it wrong</button
+            ><button id="challenge-skipped" disabled>
+              Skip / finish attempt
+            </button>
+          </div>
+          <p class="hint">
+            A spotted pattern is the system’s guess. Your feedback checks it. A
+            wink is optional; skip anything you find uncomfortable.
+          </p>
+          <ul id="attempts" class="attempts"></ul>
+          <label for="validation-notes">What was the setup? (optional)</label
+          ><textarea
+            id="validation-notes"
+            maxlength="500"
+            rows="3"
+            placeholder="Glasses, room lighting, camera distance…"
+          ></textarea>
+          <p id="report-count" class="hint"></p>
+          <div class="button-row">
+            <button id="report-download" disabled>Download findings</button
+            ><button id="report-reset" disabled>Clear</button>
+          </div>
+          <p class="hint">
+            Findings include your feedback and a short measurement trace. No
+            photos, video, or face landmarks are saved. Download before leaving
+            this page.
           </p>
         </section>
       </aside>

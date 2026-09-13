@@ -1,5 +1,6 @@
 import { EyeController } from "./controller.mjs";
 import { makePacket } from "./measurements.mjs";
+import { ExploreView } from "./explore-view.mjs";
 const $ = (id) => document.getElementById(id);
 const video = $("camera"),
   canvas = $("eyes"),
@@ -19,6 +20,7 @@ let recording = null,
   initializationTimer;
 let eyeDetail = false;
 const MAX_SAMPLES = 10000;
+const exploration = new ExploreView();
 function message(text) {
   $("message").textContent = text;
 }
@@ -67,6 +69,7 @@ function stopCamera(reason = "Camera stopped. Press Start to reconnect.") {
     );
   downloadRecording();
   packet = null;
+  exploration.clear();
   controller = new EyeController();
   setDelay();
   $("start").disabled = false;
@@ -140,7 +143,10 @@ async function startCamera() {
         stopCamera(`Tracking worker failed: ${event.message}`);
     };
     worker.onmessage = ({ data }) => {
-      if (token !== session) return;
+      if (token !== session) {
+        data.frame?.close();
+        return;
+      }
       if (data.type === "ready") {
         clearTimeout(initializationTimer);
         ready = true;
@@ -154,6 +160,7 @@ async function startCamera() {
         lastPacketAt = performance.now();
         eyeDetail = data.eyeDetail;
         acceptPacket(data.packet);
+        exploration.ingest(data, performance.now() - startedAt);
       } else if (data.type === "error")
         stopCamera(
           `Could not start tracking: ${data.message}. Check your connection and retry.`,
@@ -281,6 +288,7 @@ function animate(now) {
   $("scene-state").textContent = scene.state;
   if (now - lastReadings > 100) {
     lastReadings = now;
+    exploration.render(clock, ready);
     const fresh = ready && packet && clock - packet.timestamp_ms < 750;
     for (const side of ["left", "right"])
       for (const [, key] of fields) {
@@ -301,6 +309,8 @@ function animate(now) {
   requestAnimationFrame(animate);
 }
 $("start").onclick = startCamera;
+$("explore-camera").onclick = () =>
+  stream || starting ? stopCamera() : startCamera();
 $("stop").onclick = () => stopCamera();
 $("mode").onchange = setDelay;
 $("delay").oninput = setDelay;
@@ -314,8 +324,22 @@ $("record").onclick = () => {
   $("record-status").textContent = "Recording raw measurements…";
 };
 $("visitor").onclick = () => {
+  exploration.endAttempt();
+  document.body.classList.remove("exploring");
+  $("explore-toggle").textContent = "Explore tracking";
+  $("explore-toggle").setAttribute("aria-pressed", "false");
   const visitor = document.body.classList.toggle("visitor");
   $("visitor").textContent = visitor ? "Staff dashboard" : "Visitor view";
+};
+$("explore-toggle").onclick = () => {
+  document.body.classList.remove("visitor");
+  $("visitor").textContent = "Visitor view";
+  const exploring = document.body.classList.toggle("exploring");
+  if (!exploring) exploration.endAttempt();
+  $("explore-toggle").textContent = exploring
+    ? "Back to playful eyes"
+    : "Explore tracking";
+  $("explore-toggle").setAttribute("aria-pressed", String(exploring));
 };
 $("fullscreen").onclick = async () => {
   try {

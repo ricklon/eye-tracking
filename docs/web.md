@@ -66,6 +66,78 @@ the shared compatibility guarantee is the tested measurement contract.
 
 ## Measurements and recording
 
+### Explore tracking: the wink lab
+
+Choose **Explore tracking** to see the path from a face landmark map to eye-corner,
+iris, and separate upper/lower lid measurements. The face box tracks image position;
+the line between the outer eye corners illustrates image tilt, not physical head
+angles. Toggle face and eye guides independently. Both magnified eyes keep
+anatomical labels and the same mirrored presentation as the full image.
+
+The worker transfers the measured image and landmarks separately from the raw
+schema-v1 packet. Inspection overlays and eye crops use that exact image rather
+than the newer live camera preview. Only the latest inspection image is retained;
+it is released on replacement or camera stop. The map, eye status, and challenges
+are always live, independent of the playful animation's echo and smoothing.
+
+Per-eye status uses the same closure/reopening latch as the animation, starting
+immediately rather than waiting for its greeting. A high blink score with a clearly
+open gap is shown as **Uncertain**. Missing eyes and stale frames are **Unavailable**,
+not open. Gaze validity and sufficient eye detail are reported separately. Open/closed
+states are heuristic interpretations, not verified physical measurements.
+
+Five challenges cover a slow blink, left/right winks, and looking left/right.
+Each begins with at least four distinct open-eye samples spanning 400 ms. Blink and
+wink challenges require closure followed by reopening; a wink also requires the
+other eye to remain open. Gaze challenges compare each eye's horizontal iris offset
+with its starting value, require a shift of more than 0.04 eye widths for at least
+three samples over 200 ms, and reject insufficient detail or a face-center shift
+of 0.06 image units or more. These thresholds are provisional. The center check does
+not compensate for head rotation or prove that only the eyes moved.
+
+Gaps over 200 ms, unavailable eyes, and stale results reset unfinished movement
+evidence. Repeated display frames cannot advance a challenge. **Pattern spotted**
+is only a system observation: **Yes, that matched** records visitor confirmation;
+**It missed / got it wrong** can record a false positive or a miss even when no
+pattern was detected. **Skip / finish attempt** is available for any challenge.
+Camera stop, restarting a challenge, or leaving exploration ends the active attempt
+as skipped. Completed observations are not automatically counted as accurate.
+
+**Download findings** exports a separate JSON report (`report_schema_version: 1`),
+with challenge ID, system observation, visitor feedback, optional setup notes,
+baseline/completion evidence, and up to 240 recent raw samples per attempt. It
+retains the latest 30 reviewed attempts in tab memory. Evidence samples include
+the unchanged measurement schema v1, not images or face landmarks. Timestamps are
+relative to the individual camera session; separate attempts can come from different
+sessions. Finish or review an attempt before downloading to include it. **Clear**
+discards these findings and setup notes. Reloading/closing the page also loses them.
+Reports are self-reported validation notes, not an accuracy score or calibration.
+
+### Visible iris color
+
+The exploration panels also estimate **visible iris color** independently per eye.
+MediaPipe supplies iris landmarks; `static/iris-color.mjs` supplies a provisional
+pixel-color heuristic, not a model-provided eye-color classification. A swatch and
+broad color-family label describe the current camera image. These are transient UI
+values and are not added to raw JSONL packets or validation reports.
+
+The sampler uses the 60–85% radius band of the landmark-estimated iris ellipse,
+clipped to the visible lid gap. It aims to exclude the pupil and outer iris border,
+and rejects very dark or bright pixels. It requires at least a six-pixel radius
+on both axes and 16 usable samples; tiny/oblique irises, closure, too few samples,
+and large color variation produce an unavailable state with a positioning or
+lighting cue. Uncertain eye status and stale frames also suppress the swatch.
+Color does not affect gaze, lid detection, or the illustrated eyes.
+
+The pupil boundary is not segmented, so a dilated pupil can contaminate the sample.
+Reflections, skin/lid contamination, contact lenses, white balance, and illumination
+can shift the result. Brown/amber, green/hazel, blue/gray, and gray labels are broad
+appearance hints, not validated natural eye-color measurements. Unit checks use
+synthetic colors and exclusions; browser checks use a portrait fixture. Real-eye
+accuracy across colors, cameras, and lighting still needs visitor validation.
+
+### Raw JSONL recording
+
 Raw JSONL uses schema version 1, with anatomical `left` and `right` labels and the
 original image orientation. Each timestamp is monotonic milliseconds since this
 camera session started. Recording starts partway through that timeline; it does not

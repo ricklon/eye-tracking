@@ -50,6 +50,12 @@ separate per-eye iris/lid readings, JSONL recording, and a fullscreen visitor vi
 The Python command serves static assets; it does not capture or receive video.
 The existing Python webcam and kiosk commands remain available.
 
+**Explore tracking** turns validation into an interactive activity: a live face map,
+magnified eyes with iris/lid markers, open/closed/uncertain status, and guided blink,
+wink, and gaze challenges. Each eye also shows a provisional iris-color swatch when
+there is enough clear image detail. Visitors can confirm or dispute what was detected and
+download their findings with a short measurement trace. No images are exported.
+
 The browser downloads pinned MediaPipe 0.10.32 runtime/WASM and the version 1 model
 from jsDelivr and Google on startup (subject to browser caching). Camera access
 requires localhost or HTTPS; plain HTTP on a LAN IP will not enable a phone's camera.

@@ -397,3 +397,239 @@ footer {
     display: none;
   }
 }
+/* The exploration mode reuses the camera session, with an undelayed inspection view. */
+.exploration {
+  display: none;
+}
+.exploring .exploration {
+  display: block;
+}
+.exploring .stage {
+  display: none;
+}
+.exploring .playful-controls {
+  display: none;
+}
+.exploration:not(.challenge-panel) {
+  padding: 28px;
+  align-self: start;
+}
+.exploration h1 {
+  margin: 10px 0 0;
+  font-size: 34px;
+}
+.tracking-steps {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 24px 0 18px;
+}
+.tracking-steps li {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 13px;
+  background: #111b24;
+}
+.tracking-steps b {
+  display: block;
+  color: var(--mint);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.tracking-steps span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+#tracking-map {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 12px;
+  background: #101720;
+}
+.map-toolbar {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 9px;
+}
+.map-toolbar label {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  margin: 0;
+  font-size: 11px;
+}
+.map-toolbar input {
+  accent-color: var(--mint);
+}
+#explore-age {
+  color: var(--muted);
+  font-size: 10px;
+  margin-left: auto;
+}
+.legend {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  margin: 22px 0 16px;
+}
+.iris-key {
+  color: #ffdb78;
+}
+.upper-key {
+  color: #bdacff;
+}
+.lower-key {
+  color: #69e5e0;
+}
+.eye-labs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.eye-labs article {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 15px;
+  min-width: 0;
+}
+.eye-labs h2 {
+  font-size: 14px;
+}
+.eye-labs canvas {
+  width: 100%;
+  height: auto;
+  background: #101720;
+  border-radius: 8px;
+  margin-top: 14px;
+}
+.eye-status {
+  font-size: 11px;
+  color: var(--muted);
+}
+.eye-status[data-state="Open"] {
+  color: var(--mint);
+}
+.eye-status[data-state="Closed"] {
+  color: #bdacff;
+}
+.eye-status[data-state="Uncertain"] {
+  color: #ffdb78;
+}
+.signal-values {
+  font-size: 11px;
+  line-height: 1.7;
+  font-variant-numeric: tabular-nums;
+  color: #dae4ee;
+}
+.iris-color {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.color-swatch {
+  display: block;
+  flex: 0 0 38px;
+  height: 38px;
+  border: 1px solid #80919e;
+  border-radius: 50%;
+}
+.iris-color .eyebrow {
+  font-size: 9px;
+  letter-spacing: 1px;
+}
+.iris-color p {
+  margin: 5px 0 0;
+  font-size: 13px;
+}
+.exploration details {
+  margin-top: 20px;
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+  font-size: 12px;
+}
+.exploration summary {
+  cursor: pointer;
+  color: var(--mint);
+}
+.challenge-panel h2 {
+  margin-top: 10px;
+}
+.challenge-panel .primary {
+  width: 100%;
+  margin-top: 18px;
+}
+.challenge-detected {
+  color: var(--mint);
+  font-size: 16px;
+  margin: 20px 0 0;
+  font-weight: 600;
+}
+.feedback-buttons {
+  display: grid;
+  gap: 8px;
+  margin: 18px 0;
+}
+.attempts {
+  padding-left: 16px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.7;
+}
+.attempts li {
+  margin-bottom: 8px;
+}
+textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #101720;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 10px;
+}
+.header-actions {
+  flex-wrap: wrap;
+}
+@media (max-width: 760px) {
+  .exploration:not(.challenge-panel) {
+    padding: 18px;
+  }
+  .tracking-steps {
+    gap: 6px;
+  }
+  .tracking-steps li {
+    padding: 9px;
+  }
+  .eye-labs {
+    grid-template-columns: 1fr;
+  }
+  .exploration h1 {
+    font-size: 28px;
+  }
+  #explore-age {
+    margin-left: 0;
+  }
+  .header-actions #status {
+    width: 100%;
+  }
+  .header-actions button {
+    font-size: 12px;
+    padding: 10px;
+  }
+  .map-toolbar {
+    gap: 10px;
+  }
+}
