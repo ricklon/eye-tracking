@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Eye studio</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="./"
+        ><span class="brand-icon">◉</span> Eye studio
+        <span class="tag">PLAY LAB</span></a
+      >
+      <div class="header-actions">
+        <span id="status" role="status">Camera off</span
+        ><button id="visitor">Visitor view</button
+        ><button id="fullscreen">Fullscreen ↗</button>
+      </div>
+    </header>
+    <main>
+      <section class="stage panel" aria-label="Animated software eyes">
+        <div class="stage-top">
+          <span class="eyebrow">THE MIRROR ROOM</span
+          ><span id="mode-badge" class="pill">1.2s echo</span>
+        </div>
+        <canvas
+          id="eyes"
+          width="1100"
+          height="550"
+          aria-label="Eyes responding to your movement"
+        ></canvas>
+        <div class="stage-copy">
+          <h1 id="title">Can you make me wink?</h1>
+          <p id="prompt">Start the camera to play</p>
+        </div>
+        <div class="stage-bottom">
+          <span><i></i> Software preview</span
+          ><span id="scene-state">Idle</span>
+        </div>
+      </section>
+      <aside class="staff">
+        <section class="panel control">
+          <div class="section-heading">
+            <h2>Your camera</h2>
+            <span class="tag">ON THIS DEVICE</span>
+          </div>
+          <div class="camera-wrap">
+            <video id="camera" muted autoplay playsinline></video>
+            <div id="camera-empty">
+              A little eye contact goes a long way.<br /><small
+                >Your video stays in this browser.</small
+              >
+            </div>
+            <span class="camera-label">Mirrored preview</span>
+          </div>
+          <label for="camera-select">Camera</label
+          ><select id="camera-select">
+            <option value="">Default camera</option>
+          </select>
+          <div class="button-row">
+            <button id="start" class="primary">Start camera</button
+            ><button id="stop" disabled>Stop</button>
+          </div>
+          <p id="message" class="hint" role="status">
+            Camera access begins when you press Start. Model files download on
+            first use.
+          </p>
+        </section>
+        <section class="panel control">
+          <h2>Make it playful</h2>
+          <label for="mode">Movement</label
+          ><select id="mode">
+            <option value="echo">Eye echo</option>
+            <option value="live">Live mirror</option>
+          </select>
+          <div class="slider-heading">
+            <label for="delay">Echo delay</label
+            ><output id="delay-value">1.2 seconds</output>
+          </div>
+          <input
+            id="delay"
+            type="range"
+            min="0.2"
+            max="3"
+            step="0.1"
+            value="1.2"
+          />
+          <p class="hint">
+            Blink or look away, then watch your movement a moment later.
+          </p>
+        </section>
+      </aside>
+      <section class="panel readings staff">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">LIVE MEASUREMENTS</span>
+            <h2>Every eye has its own story</h2>
+          </div>
+          <span class="tag">ANATOMICAL LEFT / RIGHT</span>
+        </div>
+        <div class="eye-readings">
+          <div>
+            <h3>Left eye</h3>
+            <dl id="left-readings"></dl>
+          </div>
+          <div>
+            <h3>Right eye</h3>
+            <dl id="right-readings"></dl>
+          </div>
+        </div>
+        <p class="hint">
+          Raw iris and lid positions use the original image. Mirroring and echo
+          affect only the display. Gaze validity is a geometry heuristic.
+        </p>
+      </section>
+      <section class="panel control staff">
+        <span class="eyebrow">CAPTURE & EXPLORE</span>
+        <h2>Save the movement</h2>
+        <p class="hint">
+          Record raw measurements as JSONL. No images or video are saved. Each
+          recording is limited to 10,000 samples.
+        </p>
+        <button id="record" disabled>Record measurements</button>
+        <p id="record-status" class="hint">Ready when your camera is.</p>
+        <div class="connection-note">
+          <i></i> Software only · hardware is not connected
+        </div>
+      </section>
+    </main>
+    <footer class="staff">
+      Eye studio · MediaPipe in your browser
+      <span>Camera → measurements → animation → display</span>
+    </footer>
+    <script type="module" src="./app.mjs"></script>
+  </body>
+</html>

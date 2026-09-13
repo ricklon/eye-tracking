@@ -1,0 +1,27 @@
+[project]
+name = "eye-tracking"
+version = "0.1.0"
+description = "MediaPipe face, iris, and eyelid tracking for future eyemech animation"
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "mediapipe>=0.10.32,<0.11",
+    "numpy>=1.26,<3",
+    "opencv-contrib-python>=4.11,<5",
+]
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
+
+[project.scripts]
+eye-tracking = "eye_tracking.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
