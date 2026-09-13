@@ -42,8 +42,43 @@ test("repeated redraws cannot reopen a closed lid", () => {
   const latch = new LidLatch();
   assert.equal(latch.update({ ...eye, aperture: 0 }, 0), true);
   for (let i = 0; i < 10; i++) assert.equal(latch.update(eye, 20), true);
-  assert.equal(latch.update(eye, 80), true);
-  assert.equal(latch.update(eye, 160), false);
+  let t = 20;
+  while (latch.update(eye, (t += 33)) && t < 1000);
+  assert.ok(t >= 150 && t <= 300, `reopened after ${t} ms`);
+});
+test("held closed eye ignores brief noisy open-looking frames", () => {
+  const latch = new LidLatch();
+  const closed = { ...eye, aperture: 0.07, blink_score: 0.7 };
+  const noisy = [
+    { ...eye, aperture: 0.13, blink_score: 0.6 },
+    { ...eye, aperture: 0.09, blink_score: 0.3 },
+    { ...eye, aperture: 0.2, blink_score: 0.25 },
+  ];
+  let t = 0;
+  for (let i = 0; i < 30; i++) latch.update(eye, (t += 33));
+  for (let i = 0; i < 5; i++) latch.update(closed, (t += 33));
+  assert.equal(latch.closed, true);
+  for (let i = 0; i < 300; i++) {
+    const sample = i % 7 === 3 ? noisy[i % 3] : closed;
+    assert.equal(latch.update(sample, (t += 33)), true, `frame ${i}`);
+    assert.equal(latch.display(), 0);
+  }
+});
+test("partial closure is shown, open gap reopens despite high blink score", () => {
+  const latch = new LidLatch();
+  let t = 0;
+  for (let i = 0; i < 30; i++) latch.update(eye, (t += 33));
+  assert.ok(latch.display() > 0.95);
+  for (let i = 0; i < 10; i++)
+    latch.update({ ...eye, aperture: 0.12, blink_score: 0.45 }, (t += 33));
+  assert.equal(latch.closed, false);
+  assert.ok(latch.display(1.6) < latch.display(1) && latch.display(1) < 0.9);
+  for (let i = 0; i < 10; i++)
+    latch.update({ ...eye, aperture: 0, blink_score: 1 }, (t += 33));
+  assert.equal(latch.closed, true);
+  for (let i = 0; i < 15; i++)
+    latch.update({ ...eye, aperture: 0.22, blink_score: 0.9 }, (t += 33));
+  assert.equal(latch.closed, false);
 });
 test("closure affects one anatomical side and invalid gaze holds", () => {
   const c = new EyeController();
@@ -53,12 +88,74 @@ test("closure affects one anatomical side and invalid gaze holds", () => {
   const p = packet(1750);
   p.eyes.left = { ...eye, aperture: 0, blink_score: 1, gaze_valid: false };
   p.eyes.right = { ...eye, gaze_valid: false };
-  const scene = c.update(p, 1750, true);
-  assert.equal(scene.pose.upper_left, 0);
-  assert.equal(scene.pose.lower_left, 0);
-  assert.ok(scene.pose.upper_right > 0);
+  c.update(p, 1750, true);
+  p.timestamp_ms = 1850;
+  const scene = c.update(p, 1850, true);
+  assert.ok(c.lids.left.closed && !c.lids.right.closed);
+  assert.ok(scene.pose.upper_left < 0.05);
+  assert.ok(scene.pose.lower_left < 0.05);
+  assert.ok(scene.pose.upper_right > 0.9);
   assert.deepEqual(c.gaze, [-0.5, 0.25]);
   assert.deepEqual(p.eyes.left.iris_local, [0.1, 0.05]);
+});
+// Rotation about camera y: positive turns the face's forward axis toward image right.
+const yawed = (t, degrees, pitchDegrees = 0) => {
+  const a = (degrees * Math.PI) / 180,
+    b = (pitchDegrees * Math.PI) / 180;
+  const p = packet(t);
+  for (const s of ["left", "right"]) p.eyes[s].iris_local = [0, 0.05];
+  p.face_transform = [
+    [Math.cos(a), 0, Math.sin(a) * Math.cos(b), 0],
+    [0, 1, Math.sin(b), 0],
+    [-Math.sin(a), 0, Math.cos(a) * Math.cos(b), -40],
+    [0, 0, 0, 1],
+  ];
+  return p;
+};
+test("head turn moves the mirrored eyes the same way, even with eyes still", () => {
+  for (const [degrees, sign] of [
+    [25, -1],
+    [-25, 1],
+  ]) {
+    const c = new EyeController();
+    c.setDelay(0);
+    c.update(yawed(0, 0), 0, true);
+    let pose;
+    for (let t = 1700; t < 2700; t += 33)
+      pose = c.update(yawed(t, degrees), t, true).pose;
+    const still = new EyeController();
+    still.setDelay(0);
+    still.update(yawed(0, 0), 0, true);
+    let base;
+    for (let t = 1700; t < 2700; t += 33)
+      base = still.update(yawed(t, 0), t, true).pose;
+    assert.ok(sign * (pose.x - base.x) > 0.6, `x ${pose.x} vs ${base.x}`);
+  }
+  const c = new EyeController();
+  c.setDelay(0);
+  c.update(yawed(0, 0), 0, true);
+  let pose;
+  for (let t = 1700; t < 2700; t += 33)
+    pose = c.update(yawed(t, 0, 20), t, true).pose;
+  assert.ok(pose.y < -0.1, "looking up moves eyes up");
+  c.headGain = 0;
+  for (let t = 2700; t < 3700; t += 33)
+    pose = c.update(yawed(t, 0, 20), t, true).pose;
+  assert.ok(Math.abs(pose.y - 0.25) < 0.01, "gain 0 ignores the head");
+});
+test("head turn still steers while gaze is invalid", () => {
+  const c = new EyeController();
+  c.setDelay(0);
+  c.update(yawed(0, 0), 0, true);
+  for (let t = 1700; t < 2000; t += 33) c.update(yawed(t, 0), t, true);
+  const before = c.gaze[0];
+  let t = 2000;
+  for (; t < 3000; t += 33) {
+    const p = yawed(t, 25);
+    for (const s of ["left", "right"]) p.eyes[s].gaze_valid = false;
+    c.update(p, t, true);
+  }
+  assert.ok(c.gaze[0] < before - 0.6);
 });
 test("stale camera clears replay; departure resets and reacquires", () => {
   const c = new EyeController();

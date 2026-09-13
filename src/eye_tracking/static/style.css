@@ -213,6 +213,22 @@ video {
   object-fit: contain;
   transform: scaleX(-1);
 }
+#camera-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+label.check {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  margin-top: -8px;
+}
+label.check input {
+  accent-color: var(--mint);
+}
 #camera-empty {
   position: absolute;
   inset: 0;

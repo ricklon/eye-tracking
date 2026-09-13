@@ -29,6 +29,15 @@ Browser camera → MediaPipe worker → raw measurement packet
   and bounded echo history. Like the Python kiosk, it falls back to following face
   position when eye spans are too small or asymmetric. These are display decisions,
   separate from raw data.
+- Animated gaze adds head turn to eye movement. Iris offsets are measured inside the
+  eye opening, so turning the head while watching the screen barely changes them.
+  `headTurn()` takes the canonical face's forward axis from `face_transform`
+  (column 2: x toward image right, y up) and adds `-sin(angle) × headGain` to the
+  mirrored pose (**Head turn follow** slider, default 2, 0 disables). Head turn still
+  steers while gaze is invalid, for example during a blink. The yaw sign was checked
+  against MediaPipe output on an original and mirrored portrait; pitch follows the
+  documented y-up camera space and has not been checked on a live face. The camera
+  overlay shows the estimated turn.
 - `static/app.mjs` owns browser capture, controls, canvas rendering, and recording.
   At most one camera frame is in flight. Slow inference drops opportunities to
   capture instead of building a queue; rendering continues independently.
@@ -81,8 +90,17 @@ it is released on replacement or camera stop. The map, eye status, and challenge
 are always live, independent of the playful animation's echo and smoothing.
 
 Per-eye status uses the same closure/reopening latch as the animation, starting
-immediately rather than waiting for its greeting. A high blink score with a clearly
-open gap is shown as **Uncertain**. Missing eyes and stale frames are **Unavailable**,
+immediately rather than waiting for its greeting. The latch (`LidLatch` in
+`controller.mjs`) blends two signals into one smoothed 0..1 openness value: the lid
+gap, scaled by a learned per-eye open gap, and the blink score. A lid gap below 15%
+of the open gap counts as closed regardless of blink score, and a wide gap can reopen
+an eye whose blink score stays high. Closing is immediate; reopening needs three
+samples over 120 ms at openness 0.6 or more, so single noisy frames cannot flick a
+held wink open. The animated lids ease toward `openness ** gain` (the **Lid
+exaggeration** slider, default 1.6) and close faster than they open. **Show face
+tracking on camera** overlays landmarks, lid lines, and per-eye openness on the
+camera preview; they come from the latest measured frame and can trail the video.
+A high blink score with a clearly open gap is shown as **Uncertain**. Missing eyes and stale frames are **Unavailable**,
 not open. Gaze validity and sufficient eye detail are reported separately. Open/closed
 states are heuristic interpretations, not verified physical measurements.
 

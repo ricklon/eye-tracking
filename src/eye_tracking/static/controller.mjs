@@ -7,8 +7,18 @@ const neutral = () => ({
   upper_right: 1,
   lower_right: 1,
 });
+const smoothstep = (lo, hi, x) => {
+  const t = clamp((x - lo) / (hi - lo));
+  return t * t * (3 - 2 * t);
+};
+// Fuses lid gap and blink score into one smoothed 0 (closed)..1 (open) value.
+// The gap is scaled by this person's learned open-eye gap. Closing is immediate;
+// reopening needs sustained open evidence so landmark jitter cannot flick a held
+// closed eye open.
 export class LidLatch {
   closed = false;
+  openness = 1;
+  openGap = 0.25;
   last = null;
   since = null;
   count = 0;
@@ -16,36 +26,73 @@ export class LidLatch {
     this.since = null;
     this.count = 0;
   }
+  evidence(eye) {
+    const a = eye.aperture,
+      b = eye.blink_score,
+      gap = clamp(a / this.openGap, 0, 1.5),
+      gapOpen = smoothstep(0.3, 0.8, gap);
+    // Touching lid landmarks are closed whatever the blink score says.
+    if (b === null || gap < 0.15) return gapOpen;
+    // A clearly wide gap still counts when the blink score stays high while open.
+    return Math.max(
+      (gapOpen + 1 - smoothstep(0.35, 0.7, b)) / 2,
+      0.8 * smoothstep(0.65, 0.9, gap),
+    );
+  }
   update(eye, timestamp) {
     if (this.last !== null && timestamp <= this.last) return this.closed;
-    if (this.last !== null && timestamp - this.last > 200) this.interrupt();
+    const dt = this.last === null ? 33 : timestamp - this.last;
+    if (dt > 200) this.interrupt();
     this.last = timestamp;
-    const a = eye.aperture,
-      b = eye.blink_score;
-    if (a <= 0.04 || (a <= 0.1 && b !== null && b >= 0.55)) {
+    const b = eye.blink_score;
+    if (!this.closed && (b === null || b <= 0.3) && eye.aperture > 0.03) {
+      // Rise quickly to a wider open gap, forget slowly (~15 s).
+      const rate = eye.aperture > this.openGap ? 0.2 : 1 - Math.exp(-dt / 15000);
+      this.openGap = clamp(
+        this.openGap + (eye.aperture - this.openGap) * rate,
+        0.12,
+        0.45,
+      );
+    }
+    const raw = this.evidence(eye);
+    this.openness += (raw - this.openness) * (1 - Math.exp(-Math.min(dt, 200) / 60));
+    if (raw < 0.2 || this.openness < 0.3) {
       this.closed = true;
+      this.openness = Math.min(this.openness, raw);
       this.interrupt();
-    } else if (
-      this.closed &&
-      (a >= 0.12 || (a >= 0.065 && (b === null || b <= 0.35)))
-    ) {
+    } else if (this.closed && this.openness >= 0.6) {
       this.since ??= timestamp;
       this.count++;
-      if (
-        this.count >= 3 &&
-        timestamp - this.since >= (b !== null && b > 0.35 ? 250 : 120)
-      ) {
+      if (this.count >= 3 && timestamp - this.since >= 120) {
         this.closed = false;
         this.interrupt();
       }
     } else this.interrupt();
     return this.closed;
   }
+  // Display openness: 0 while latched closed, otherwise exaggerated partial closure.
+  display(gain = 1.6) {
+    if (this.closed) return 0;
+    return clamp((this.openness - 0.3) / 0.6) ** gain;
+  }
+}
+// Head turn from the face transform: the canonical face's forward (+z) axis in camera
+// space. Returns [x toward image right, y up], each sin(angle), or null. Display-only.
+export function headTurn(packet) {
+  const m = packet?.face_transform;
+  if (!m || m.length < 3 || m[0].length < 3) return null;
+  const [x, y, z] = [m[0][2], m[1][2], m[2][2]];
+  const n = Math.hypot(x, y, z);
+  return n > 1e-6 ? [x / n, y / n] : null;
 }
 // Browser display controller. Pose is mirrored for visitors, never a servo contract.
 export class EyeController {
   pose = neutral();
   delay = 1200;
+  lidGain = 1.6;
+  // sin(30°) head turn × 2 reaches the edge of the eye.
+  headGain = 2;
+  headPart = [0, 0];
   history = [];
   lastSeen = -Infinity;
   entered = null;
@@ -70,32 +117,35 @@ export class EyeController {
       if (this.entered === null) {
         this.entered = now;
         this.gaze = [0, 0];
+        this.headPart = [0, 0];
         this.lids = { left: new LidLatch(), right: new LidLatch() };
       }
       this.lastSeen = now;
       const age = now - this.entered;
       const eyes = Object.values(packet.eyes).filter(Boolean);
       const valid = eyes.filter((e) => e.gaze_valid);
+      // Mirrored display: pose x is screen right (image left), pose y is down.
+      const head = headTurn(packet);
+      const [hx, hy] = head
+        ? [-head[0] * this.headGain, -head[1] * this.headGain]
+        : [0, 0];
       if (age < 1600 || !eyeDetail) {
         this.gaze = [
-          clamp((0.5 - packet.face_center[0]) * 2.5, -1, 1),
-          clamp((packet.face_center[1] - 0.5) * 2.5, -1, 1),
+          clamp((0.5 - packet.face_center[0]) * 2.5 + hx, -1, 1),
+          clamp((packet.face_center[1] - 0.5) * 2.5 + hy, -1, 1),
         ];
       } else if (valid.length) {
+        const mean = (i) =>
+          valid.reduce((s, e) => s + e.iris_local[i], 0) / valid.length;
         this.gaze = [
-          clamp(
-            (-valid.reduce((s, e) => s + e.iris_local[0], 0) / valid.length) *
-              5,
-            -1,
-            1,
-          ),
-          clamp(
-            (valid.reduce((s, e) => s + e.iris_local[1], 0) / valid.length) * 5,
-            -1,
-            1,
-          ),
+          clamp(-mean(0) * 5 + hx, -1, 1),
+          clamp(mean(1) * 5 + hy, -1, 1),
         ];
+      } else if (head) {
+        // Eyes closed or gaze invalid: keep eye-in-socket part, still follow the head.
+        this.gaze = [clamp(this.gaze[0] - this.headPart[0] + hx, -1, 1), clamp(this.gaze[1] - this.headPart[1] + hy, -1, 1)];
       }
+      this.headPart = [hx, hy];
       [target.x, target.y] = this.gaze;
       if (age >= 1600)
         for (const side of ["left", "right"]) {
@@ -106,9 +156,12 @@ export class EyeController {
             target[`lower_${side}`] = this.pose[`lower_${side}`];
             continue;
           }
-          const closed = this.lids[side].update(eye, packet.timestamp_ms);
-          target[`upper_${side}`] = closed ? 0 : clamp(-eye.upper_lid / 0.12);
-          target[`lower_${side}`] = closed ? 0 : clamp(eye.lower_lid / 0.12);
+          const latch = this.lids[side];
+          latch.update(eye, packet.timestamp_ms);
+          const open = latch.display(this.lidGain);
+          // The lower lid travels less than the upper until nearly closed.
+          target[`upper_${side}`] = open;
+          target[`lower_${side}`] = Math.sqrt(open);
         }
       state = age < 1600 ? "greeting" : "copying";
       title = age < 1600 ? "Oh, hello!" : "Your eyes are in charge";
@@ -146,14 +199,10 @@ export class EyeController {
     }
     for (const key of Object.keys(target)) {
       const gaze = key === "x" || key === "y";
-      const change =
-        (target[key] - this.pose[key]) *
-        (1 - Math.exp(-dt / (gaze ? 100 : 35)));
-      this.pose[key] =
-        !gaze && target[key] === 0
-          ? 0
-          : this.pose[key] +
-            (gaze ? clamp(change, -dt * 0.003, dt * 0.003) : change);
+      // Lids close fast and open a little slower, like a real blink.
+      const tau = gaze ? 100 : target[key] < this.pose[key] ? 25 : 60;
+      const change = (target[key] - this.pose[key]) * (1 - Math.exp(-dt / tau));
+      this.pose[key] += gaze ? clamp(change, -dt * 0.003, dt * 0.003) : change;
     }
     let pose = { ...this.pose };
     if ((state === "copying" || state === "following") && this.delay > 0) {

@@ -177,10 +177,12 @@
           <summary>How do these signals become a blink?</summary>
           <p class="hint">
             The gap is the distance between the upper and lower lid samples,
-            measured relative to eye width. A very small gap closes the
-            illustrated eye. MediaPipe’s blink score supplies another clue; it
-            is not a confidence percentage. Several fresh open samples are
-            needed to reopen it, which reduces flicker. Signals can disagree, so
+            measured relative to eye width and compared with your own open-eye
+            gap. MediaPipe’s blink score supplies another clue; it is not a
+            confidence percentage. The two are blended into one smoothed
+            openness value. Closing is immediate, but about 120 ms of steady
+            open evidence is needed to reopen, so a held wink does not flicker.
+            Signals can disagree, so
             “uncertain” is useful feedback. The iris estimate is retained during
             closure, but it should not steer gaze.
           </p>
@@ -199,6 +201,10 @@
           </div>
           <div class="camera-wrap">
             <video id="camera" muted autoplay playsinline></video>
+            <canvas
+              id="camera-overlay"
+              aria-label="Face tracking drawn over the camera preview"
+            ></canvas>
             <div id="camera-empty">
               A little eye contact goes a long way.<br /><small
                 >Your video stays in this browser.</small
@@ -206,6 +212,10 @@
             </div>
             <span class="camera-label">Mirrored preview</span>
           </div>
+          <label class="check"
+            ><input id="camera-tracking" type="checkbox" checked /> Show face
+            tracking on camera</label
+          >
           <label for="camera-select">Camera</label
           ><select id="camera-select">
             <option value="">Default camera</option>
@@ -240,6 +250,37 @@
           />
           <p class="hint">
             Blink or look away, then watch your movement a moment later.
+          </p>
+          <div class="slider-heading">
+            <label for="lid-gain">Lid exaggeration</label
+            ><output id="lid-gain-value">1.6×</output>
+          </div>
+          <input
+            id="lid-gain"
+            type="range"
+            min="1"
+            max="3"
+            step="0.1"
+            value="1.6"
+          />
+          <p class="hint">
+            Higher values make squints and half-closed eyes look more closed.
+          </p>
+          <div class="slider-heading">
+            <label for="head-gain">Head turn follow</label
+            ><output id="head-gain-value">2.0×</output>
+          </div>
+          <input
+            id="head-gain"
+            type="range"
+            min="0"
+            max="4"
+            step="0.1"
+            value="2"
+          />
+          <p class="hint">
+            Turn or tilt your head and the eyes look the same way. 0 uses only
+            eye movement.
           </p>
         </section>
         <section class="panel control exploration challenge-panel">

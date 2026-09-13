@@ -1,5 +1,5 @@
-import { EyeController } from "./controller.mjs";
-import { makePacket } from "./measurements.mjs";
+import { EyeController, headTurn } from "./controller.mjs";
+import { EYES, clamp, makePacket } from "./measurements.mjs";
 import { ExploreView } from "./explore-view.mjs";
 const $ = (id) => document.getElementById(id);
 const video = $("camera"),
@@ -18,7 +18,8 @@ let busy = false,
 let recording = null,
   lastPacketAt = 0,
   initializationTimer;
-let eyeDetail = false;
+let eyeDetail = false,
+  landmarks = null;
 const MAX_SAMPLES = 10000;
 const exploration = new ExploreView();
 function message(text) {
@@ -69,9 +70,11 @@ function stopCamera(reason = "Camera stopped. Press Start to reconnect.") {
     );
   downloadRecording();
   packet = null;
+  landmarks = null;
   exploration.clear();
   controller = new EyeController();
   setDelay();
+  setGains();
   $("start").disabled = false;
   $("stop").disabled = true;
   $("camera-select").disabled = false;
@@ -159,6 +162,7 @@ async function startCamera() {
         busy = false;
         lastPacketAt = performance.now();
         eyeDetail = data.eyeDetail;
+        landmarks = data.landmarks;
         acceptPacket(data.packet);
         exploration.ingest(data, performance.now() - startedAt);
       } else if (data.type === "error")
@@ -256,6 +260,77 @@ function drawEye(x, y, upper, lower, pose) {
   ctx.stroke();
   ctx.restore();
 }
+// Landmarks come from the latest measured frame, so they can trail the live video slightly.
+function drawCameraOverlay(fresh) {
+  const overlay = $("camera-overlay"),
+    octx = overlay.getContext("2d"),
+    W = Math.round(overlay.clientWidth * devicePixelRatio),
+    H = Math.round(overlay.clientHeight * devicePixelRatio);
+  if (overlay.width !== W || overlay.height !== H)
+    [overlay.width, overlay.height] = [W, H];
+  octx.clearRect(0, 0, W, H);
+  const vw = video.videoWidth,
+    vh = video.videoHeight;
+  if (!$("camera-tracking").checked || !fresh || !vw || !vh) return;
+  const scale = Math.min(W / vw, H / vh),
+    ox = (W - vw * scale) / 2,
+    oy = (H - vh * scale) / 2,
+    s = devicePixelRatio;
+  const xy = (p) => [W - ox - p.x * vw * scale, oy + p.y * vh * scale];
+  octx.font = `${11 * s}px system-ui`;
+  if (!packet.face_present || !landmarks?.length) {
+    octx.fillStyle = "#ffdb78";
+    octx.fillText("Looking for a face…", 10 * s, 20 * s);
+    return;
+  }
+  octx.fillStyle = "#a2f4d080";
+  for (let i = 0; i < Math.min(468, landmarks.length); i++) {
+    const [x, y] = xy(landmarks[i]);
+    octx.fillRect(x - s, y - s, 2 * s, 2 * s);
+  }
+  for (const side of ["left", "right"]) {
+    const e = EYES[side],
+      latch = controller.lids[side];
+    const color = latch.closed ? "#ff8a8a" : "#69e5e0";
+    octx.strokeStyle = color;
+    octx.lineWidth = 1.5 * s;
+    octx.beginPath();
+    octx.moveTo(...xy(landmarks[e.upper]));
+    octx.lineTo(...xy(landmarks[e.lower]));
+    octx.stroke();
+    octx.fillStyle = "#ffdb78";
+    const [ix, iy] = xy(landmarks[e.iris]);
+    octx.beginPath();
+    octx.arc(ix, iy, 2.5 * s, 0, Math.PI * 2);
+    octx.fill();
+    const [ux, uy] = xy(landmarks[e.upper]);
+    octx.fillStyle = color;
+    octx.textAlign = "center";
+    octx.fillText(
+      packet.eyes?.[side]
+        ? latch.closed
+          ? "closed"
+          : `${Math.round(latch.display(controller.lidGain) * 100)}%`
+        : "—",
+      ux,
+      uy - 12 * s,
+    );
+  }
+  octx.textAlign = "left";
+  octx.fillStyle = "#e6f1f6";
+  octx.fillText(eyeDetail ? "Tracking eyes" : "Come closer for eye detail", 10 * s, 20 * s);
+  const head = headTurn(packet);
+  if (head) {
+    // Mirrored preview: image-right turn shows as a turn to the viewer's left.
+    const yaw = Math.round((Math.asin(clamp(head[0], -1, 1)) * 180) / Math.PI);
+    const pitch = Math.round((Math.asin(clamp(head[1], -1, 1)) * 180) / Math.PI);
+    octx.fillText(
+      `Head ${yaw > 0 ? "←" : yaw < 0 ? "→" : ""}${Math.abs(yaw)}° ${pitch > 0 ? "↑" : pitch < 0 ? "↓" : ""}${Math.abs(pitch)}°`,
+      10 * s,
+      36 * s,
+    );
+  }
+}
 const fields = [
   ["Iris x / y", "iris_local"],
   ["Upper lid", "upper_lid"],
@@ -283,6 +358,7 @@ function animate(now) {
   const p = scene.pose;
   drawEye(320, 280, p.upper_left, p.lower_left, p);
   drawEye(780, 280, p.upper_right, p.lower_right, p);
+  drawCameraOverlay(ready && packet && clock - packet.timestamp_ms < 750);
   $("title").textContent = scene.title;
   $("prompt").textContent = scene.prompt;
   $("scene-state").textContent = scene.state;
@@ -314,6 +390,14 @@ $("explore-camera").onclick = () =>
 $("stop").onclick = () => stopCamera();
 $("mode").onchange = setDelay;
 $("delay").oninput = setDelay;
+function setGains() {
+  controller.lidGain = Number($("lid-gain").value);
+  controller.headGain = Number($("head-gain").value);
+  $("lid-gain-value").textContent = `${controller.lidGain.toFixed(1)}×`;
+  $("head-gain-value").textContent = `${controller.headGain.toFixed(1)}×`;
+}
+$("lid-gain").oninput = setGains;
+$("head-gain").oninput = setGains;
 $("record").onclick = () => {
   if (recording !== null) {
     downloadRecording();
@@ -370,4 +454,5 @@ window.addEventListener("beforeunload", (event) => {
   }
 });
 setDelay();
+setGains();
 requestAnimationFrame(animate);

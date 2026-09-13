@@ -63,15 +63,13 @@ export class EyeInspector {
         result[side] = "Unavailable";
         continue;
       }
-      const closed = this.latches[side].update(eye, packet.timestamp_ms);
+      const latch = this.latches[side];
+      const closed = latch.update(eye, packet.timestamp_ms);
       const conflict =
         eye.blink_score !== null &&
         eye.blink_score >= 0.55 &&
-        eye.aperture > 0.1;
-      const open =
-        eye.aperture >= 0.12 ||
-        (eye.aperture >= 0.065 &&
-          (eye.blink_score === null || eye.blink_score <= 0.35));
+        eye.aperture / latch.openGap > 0.5;
+      const open = latch.openness >= 0.6;
       result[side] = conflict
         ? "Uncertain"
         : closed
