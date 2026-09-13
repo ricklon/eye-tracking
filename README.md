@@ -4,6 +4,10 @@ Python/uv starter for local webcam face, iris, and eyelid tracking with MediaPip
 The first development target is measuring eye motion; the later target is animating
 the sibling `../eyemech-esp32-xiao` mechanism.
 
+**Live preview:** <https://ricklon.github.io/eye-tracking/>. The browser dashboard is
+published from `main` by `.github/workflows/pages.yml` after the tests pass. Camera
+and tracking run in your browser; nothing is uploaded.
+
 ## Start (web interface)
 
 The browser dashboard is the primary way to run this project. It works the same on
