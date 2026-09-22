@@ -687,3 +687,11 @@ textarea {
 .visitor.exploring .play-note {
   display: none;
 }
+/* The wink lab's challenges sit in the staff column, which the play page hides. While
+   a visitor is exploring, show that column but only the challenges within it. */
+.visitor.exploring aside.staff {
+  display: block;
+}
+.visitor.exploring aside.staff > *:not(.exploration) {
+  display: none;
+}

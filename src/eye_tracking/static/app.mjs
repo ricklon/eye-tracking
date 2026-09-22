@@ -543,8 +543,7 @@ $("play").onclick = () => {
   showPlay();
 };
 $("explore-toggle").onclick = () => {
-  document.body.classList.remove("visitor");
-  $("visitor").textContent = "Visitor view";
+  // The wink lab is for visitors too, so it opens inside whichever view is showing.
   const exploring = document.body.classList.toggle("exploring");
   if (!exploring) exploration.endAttempt();
   worker?.postMessage({ type: "frames", on: exploring });
@@ -559,7 +558,7 @@ $("fullscreen").onclick = async () => {
     else await document.documentElement.requestFullscreen();
   } catch {
     message(
-      "Fullscreen is unavailable in this browser. You can still use Visitor view.",
+      "Fullscreen is unavailable in this browser.",
     );
   }
 };
