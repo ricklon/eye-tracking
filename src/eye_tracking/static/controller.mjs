@@ -131,6 +131,16 @@ export class LidLatch {
     this.openness = this.closed ? 0 : 1 - this.closure;
     return this.closed;
   }
+  // Shut on a partner's evidence rather than this eye's own fall; the squint check
+  // still applies, so a held half-closure opens again.
+  latch(timestamp) {
+    if (this.closed) return;
+    this.closed = true;
+    this.squint = false;
+    this.latchedAt = timestamp;
+    this.deepest = this.closure;
+    this.confirmed = false;
+  }
   // Display openness: 0 while latched shut, otherwise exaggerated partial closure.
   display(gain = 1.6) {
     if (this.closed) return 0;
@@ -144,6 +154,10 @@ export class LidPair {
   // Blinks in the labelled recording differed between the eyes by at most 0.05,
   // winks by 0.11 to 0.41.
   static WINK_GAP = 0.1;
+  // A second eye already this far into a closure when the first one latches is
+  // blinking with it: the two eyes rarely fall at exactly the same speed, and without
+  // this the faster one alone reads as a wink.
+  static TOGETHER = 0.45;
   static WINK_OPEN = 0.6; // the quiet eye must be no more closed than this
   left = new LidLatch();
   right = new LidLatch();
@@ -160,10 +174,18 @@ export class LidPair {
       if (eye) this[side].update(eye, timestamp);
       else this[side].interrupt();
     }
-    for (const [side, other] of [
+    const sides = [
       ["left", "right"],
       ["right", "left"],
-    ]) {
+    ];
+    for (const [side, other] of sides)
+      if (
+        this[side].closed &&
+        !this[other].squint &&
+        this[other].closure >= LidPair.TOGETHER
+      )
+        this[other].latch(timestamp);
+    for (const [side, other] of sides) {
       const winking = this[side],
         quiet = this[other];
       if (

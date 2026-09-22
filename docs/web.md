@@ -123,11 +123,15 @@ there, a squint 0.18..0.22 and open eyes 0.04, so the bands touch and the 400 ms
 settles the rest.
 
 A wink is only visible by comparison, because MediaPipe leaks some of it into the
-other eye, so an eye that trails its partner by 0.1 of closure while below 0.6 is held
-open — unless its own closure has been confirmed deep, since both eyes shut can still
-measure far apart. Winks toward one side can be much weaker than the other: in the
-recording, right winks left the other eye untouched, while two of three left winks
-still pulled the right lid partway.
+other eye. The two eyes also rarely fall at the same speed, so when one latches and
+the other is already past 0.45 of closure the second is latched with it: a held-out
+recording had a blink where both eyes reached 0.77 and 0.71, and without this the
+marginally faster eye alone read as a wink. An eye that trails its partner by 0.1 of
+closure while below 0.6 is held open — unless its own closure has been confirmed deep, since both eyes shut can still
+measure far apart. Winks toward one side can be much weaker than the other, and this
+face's blinks are not symmetric either: in the labelled recording the right winks left
+the other eye untouched, and in a held-out one two soft blinks still read as left
+winks, the left eye reaching 0.45 of closure against the right's 0.29.
 
 `tests/lids.test.mjs` replays that labelled recording (open eyes, blinks, winks each
 way, a held squint, a held closure) and is the check that these keep working. It holds
