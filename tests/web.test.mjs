@@ -40,11 +40,17 @@ test("face loss clears measurements and degenerate eye stays null", () => {
 });
 test("repeated redraws cannot reopen a closed lid", () => {
   const latch = new LidLatch();
-  assert.equal(latch.update({ ...eye, aperture: 0 }, 0), true);
-  for (let i = 0; i < 10; i++) assert.equal(latch.update(eye, 20), true);
-  let t = 20;
+  // A shut eye latches within a frame or two: the fall is measured against what this
+  // eye was doing, so the very first frame has nothing to compare against yet.
+  latch.update({ ...eye, aperture: 0 }, 0);
+  latch.update({ ...eye, aperture: 0 }, 20);
+  assert.equal(latch.update({ ...eye, aperture: 0 }, 40), true);
+  for (let i = 0; i < 10; i++) assert.equal(latch.update(eye, 40), true);
+  let t = 40;
   while (latch.update(eye, (t += 33)) && t < 1000);
-  assert.ok(t >= 150 && t <= 300, `reopened after ${t} ms`);
+  // Reopening follows the eye rather than a fixed hold; the mechanism's own minimum
+  // closed time lives in the pose sender, where the servos need it.
+  assert.ok(t >= 40 && t <= 300, `reopened after ${t} ms`);
 });
 test("held closed eye ignores brief noisy open-looking frames", () => {
   const latch = new LidLatch();
@@ -69,9 +75,15 @@ test("partial closure is shown, open gap reopens despite high blink score", () =
   let t = 0;
   for (let i = 0; i < 30; i++) latch.update(eye, (t += 33));
   assert.ok(latch.display() > 0.95);
+  // A sudden narrowing latches at once, the way a blink must; holding it there marks
+  // it as a squint instead, and the lid opens again.
   for (let i = 0; i < 10; i++)
     latch.update({ ...eye, aperture: 0.12, blink_score: 0.45 }, (t += 33));
+  assert.equal(latch.closed, true);
+  for (let i = 0; i < 6; i++)
+    latch.update({ ...eye, aperture: 0.12, blink_score: 0.45 }, (t += 33));
   assert.equal(latch.closed, false);
+  assert.equal(latch.squint, true);
   assert.ok(latch.display(1.6) < latch.display(1) && latch.display(1) < 0.9);
   for (let i = 0; i < 10; i++)
     latch.update({ ...eye, aperture: 0, blink_score: 1 }, (t += 33));

@@ -11,69 +11,175 @@ const smoothstep = (lo, hi, x) => {
   const t = clamp((x - lo) / (hi - lo));
   return t * t * (3 - 2 * t);
 };
-// Fuses lid gap and blink score into one smoothed 0 (closed)..1 (open) value.
-// The gap is scaled by this person's learned open-eye gap. Closing is immediate;
-// reopening needs sustained open evidence so landmark jitter cannot flick a held
-// closed eye open.
+// Reads one eye's lids. Everything is measured against what THIS eye does: its own
+// open gap and its own open-eye blink score, because the two eyes differ on the same
+// face (measured on a 30 fps recording: both eyes held shut read 0.26 of open on the
+// left and 0.46 on the right) and the blink score has a per-eye resting level.
+//
+// Closure level alone cannot tell a blink from a squint: a squint reached the same
+// depth as a blink in that recording. Speed can. A blink loses a quarter of the gap
+// within 100 ms; the squint took about 400 ms to settle and then held for seconds.
+// So a fast fall latches the lid shut, a slow one is treated as a squint and never
+// latches, and a deep gap latches whatever its speed.
 export class LidLatch {
+  // Measured over a labelled 30 fps recording: blinks and winks gain 0.21..0.42 of
+  // closure within 100 ms, a squint only 0.18..0.22, and open eyes 0.04. The bands
+  // touch, so speed alone cannot decide; HOLD_MS below settles the rest.
+  static CLOSE_RATE = 0.2;
+  static ONSET_MS = 100;
+  static DEEP = 0.85; // closure that is shut however slowly it arrived
+  static OPEN = 0.3; // closure below which a latched eye reopens
+  // A latched eye that sits partly shut this long without deepening was a squint or
+  // a smile: it reopens and stays open until the eye opens properly again. A blink
+  // is long gone by then, and a real closure is deeper than HELD.
+  static HOLD_MS = 400;
+  static HELD = 0.7;
+  // Both references track THIS eye rather than a tuned constant: resting aperture and
+  // resting blink score vary by face, camera and distance, and fixed numbers would
+  // read a narrow-eyed face, or one whose blink score rests high, as permanently shut.
+  static SEED_FRAMES = 10;
+  // How far the blink score rises above this eye's resting level when it is shut.
+  static SCORE_SPAN = 0.5;
   closed = false;
-  openness = 1;
+  squint = false;
+  latchedAt = null;
+  deepest = 0; // closure reached since latching, which decides squint or closure
+  confirmed = false;
+  closure = 0; // 0 open .. 1 shut
   openGap = 0.25;
+  baseline = 0.15; // this eye's blink score while open
+  seen = 0;
+  openness = 1;
   last = null;
-  since = null;
-  count = 0;
+  held = null; // when the current partial closure began
+  recent = []; // [timestamp, closure] within ONSET_MS, for the fall speed
   interrupt() {
-    this.since = null;
-    this.count = 0;
+    this.recent = [];
+    this.held = null;
   }
+  // The eye's own open state: the aperture it reaches when open, and the blink score
+  // it rests at. The first frames seed it, so a face that is narrower than the
+  // starting guess is not read as shut; after that it rises fast and forgets slowly.
+  reference(dt, eye) {
+    if (eye.aperture <= 0.01) return;
+    if (this.seen < LidLatch.SEED_FRAMES) {
+      this.seen++;
+      this.openGap = clamp(Math.max(eye.aperture, this.seen > 1 ? this.openGap : 0), 0.05, 0.6);
+    } else if (!this.closed && eye.aperture >= 0.4 * this.openGap) {
+      const rate = eye.aperture > this.openGap ? 0.2 : 1 - Math.exp(-dt / 15000);
+      this.openGap = clamp(this.openGap + (eye.aperture - this.openGap) * rate, 0.05, 0.6);
+    }
+    // Only while this eye looks open by its own gap, so a closure cannot raise it.
+    if (eye.blink_score !== null && eye.aperture >= 0.9 * this.openGap)
+      this.baseline += (eye.blink_score - this.baseline) * 0.05;
+  }
+  // 0 when the eye is open, 1 when it is as shut as this eye gets.
   evidence(eye) {
-    const a = eye.aperture,
-      b = eye.blink_score,
-      gap = clamp(a / this.openGap, 0, 1.5),
-      gapOpen = smoothstep(0.3, 0.8, gap);
-    // Touching lid landmarks are closed whatever the blink score says.
-    if (b === null || gap < 0.15) return gapOpen;
-    // A clearly wide gap still counts when the blink score stays high while open.
-    return Math.max(
-      (gapOpen + 1 - smoothstep(0.35, 0.7, b)) / 2,
-      0.8 * smoothstep(0.65, 0.9, gap),
-    );
+    const open = eye.aperture / this.openGap,
+      gap = clamp((0.95 - open) / 0.5),
+      score =
+        eye.blink_score === null
+          ? 0
+          : clamp((eye.blink_score - this.baseline) / LidLatch.SCORE_SPAN);
+    // Either signal alone is enough, because a wink can show in the blend shape score
+    // before the lid landmarks move much. Except when the lids are plainly apart: a
+    // blink score that rests high must not hold an open eye shut.
+    return open >= 0.85 ? Math.min(gap, score) : Math.max(gap, score);
   }
   update(eye, timestamp) {
     if (this.last !== null && timestamp <= this.last) return this.closed;
     const dt = this.last === null ? 33 : timestamp - this.last;
     if (dt > 200) this.interrupt();
     this.last = timestamp;
-    const b = eye.blink_score;
-    if (!this.closed && (b === null || b <= 0.3) && eye.aperture > 0.03) {
-      // Rise quickly to a wider open gap, forget slowly (~15 s).
-      const rate = eye.aperture > this.openGap ? 0.2 : 1 - Math.exp(-dt / 15000);
-      this.openGap = clamp(
-        this.openGap + (eye.aperture - this.openGap) * rate,
-        0.12,
-        0.45,
-      );
-    }
-    const raw = this.evidence(eye);
-    this.openness += (raw - this.openness) * (1 - Math.exp(-Math.min(dt, 200) / 60));
-    if (raw < 0.2 || this.openness < 0.3) {
-      this.closed = true;
-      this.openness = Math.min(this.openness, raw);
-      this.interrupt();
-    } else if (this.closed && this.openness >= 0.6) {
-      this.since ??= timestamp;
-      this.count++;
-      if (this.count >= 3 && timestamp - this.since >= 120) {
-        this.closed = false;
-        this.interrupt();
+    this.reference(dt, eye);
+    // Light smoothing only: heavier would blunt the fall that identifies a blink.
+    this.closure +=
+      (this.evidence(eye) - this.closure) * (1 - Math.exp(-Math.min(dt, 200) / 40));
+    this.recent.push([timestamp, this.closure]);
+    while (this.recent.length > 1 && this.recent[0][0] < timestamp - LidLatch.ONSET_MS)
+      this.recent.shift();
+    const fell = this.closure - Math.min(...this.recent.map(([, c]) => c));
+    if (this.closure < LidLatch.OPEN) {
+      this.closed = false;
+      this.squint = false;
+      this.latchedAt = null;
+      this.confirmed = false;
+    } else if (
+      // A deep closure latches even after a squint: the eye really did shut.
+      this.closure >= LidLatch.DEEP ||
+      (!this.squint && fell >= LidLatch.CLOSE_RATE)
+    ) {
+      if (!this.closed) {
+        this.latchedAt = timestamp;
+        this.deepest = 0;
+        this.confirmed = false;
       }
-    } else this.interrupt();
+      this.closed = true;
+      this.squint = false;
+    }
+    this.deepest = Math.max(this.deepest, this.closure);
+    // Judged once per closure, a blink's lifetime after it latched: an eye that never
+    // got past HELD was a squint or a smile, so it opens and stays open until the eye
+    // opens properly again. Anything deeper is a real closure and is left alone.
+    if (this.closed && !this.confirmed && timestamp - this.latchedAt >= LidLatch.HOLD_MS) {
+      if (this.deepest < LidLatch.HELD) {
+        this.closed = false;
+        this.squint = true;
+        this.latchedAt = null;
+      } else this.confirmed = true;
+    }
+    this.openness = this.closed ? 0 : 1 - this.closure;
     return this.closed;
   }
-  // Display openness: 0 while latched closed, otherwise exaggerated partial closure.
+  // Display openness: 0 while latched shut, otherwise exaggerated partial closure.
   display(gain = 1.6) {
     if (this.closed) return 0;
-    return clamp((this.openness - 0.3) / 0.6) ** gain;
+    return clamp(1 - this.closure) ** gain;
+  }
+}
+// Both eyes together, because a wink is only visible by comparison: MediaPipe leaks
+// some of a wink into the other eye, so an eye that is much less closed than its
+// partner is held open rather than dragged shut with it.
+export class LidPair {
+  // Blinks in the labelled recording differed between the eyes by at most 0.05,
+  // winks by 0.11 to 0.41.
+  static WINK_GAP = 0.1;
+  static WINK_OPEN = 0.6; // the quiet eye must be no more closed than this
+  left = new LidLatch();
+  right = new LidLatch();
+  interrupt() {
+    this.left.interrupt();
+    this.right.interrupt();
+  }
+  reset(side) {
+    this[side] = new LidLatch();
+  }
+  update(packet, timestamp) {
+    for (const side of ["left", "right"]) {
+      const eye = packet.eyes?.[side];
+      if (eye) this[side].update(eye, timestamp);
+      else this[side].interrupt();
+    }
+    for (const [side, other] of [
+      ["left", "right"],
+      ["right", "left"],
+    ]) {
+      const winking = this[side],
+        quiet = this[other];
+      if (
+        winking.closed &&
+        quiet.closed &&
+        // Not once the quiet eye's own closure has been confirmed deep: both eyes
+        // shut can still measure far apart (0.26 against 0.46 of open on this face).
+        !quiet.confirmed &&
+        winking.closure - quiet.closure >= LidPair.WINK_GAP &&
+        quiet.closure < LidPair.WINK_OPEN
+      ) {
+        quiet.closed = false;
+        quiet.openness = 1 - quiet.closure;
+      }
+    }
+    return this;
   }
 }
 // Head turn from the face transform: the canonical face's forward (+z) axis in camera
@@ -98,7 +204,7 @@ export class EyeController {
   entered = null;
   previous = null;
   gaze = [0, 0];
-  lids = { left: new LidLatch(), right: new LidLatch() };
+  lids = new LidPair();
   setDelay(ms) {
     if (!Number.isFinite(ms) || ms < 0 || ms > 3000)
       throw new Error("Delay must be 0–3000 ms");
@@ -118,7 +224,7 @@ export class EyeController {
         this.entered = now;
         this.gaze = [0, 0];
         this.headPart = [0, 0];
-        this.lids = { left: new LidLatch(), right: new LidLatch() };
+        this.lids = new LidPair();
       }
       this.lastSeen = now;
       const age = now - this.entered;
@@ -147,22 +253,21 @@ export class EyeController {
       }
       this.headPart = [hx, hy];
       [target.x, target.y] = this.gaze;
-      if (age >= 1600)
+      if (age >= 1600) {
+        // Both eyes at once: a wink is only recognisable by comparing them.
+        this.lids.update(packet, packet.timestamp_ms);
         for (const side of ["left", "right"]) {
-          const eye = packet.eyes[side];
-          if (!eye) {
-            this.lids[side].interrupt();
+          if (!packet.eyes[side]) {
             target[`upper_${side}`] = this.pose[`upper_${side}`];
             target[`lower_${side}`] = this.pose[`lower_${side}`];
             continue;
           }
-          const latch = this.lids[side];
-          latch.update(eye, packet.timestamp_ms);
-          const open = latch.display(this.lidGain);
+          const open = this.lids[side].display(this.lidGain);
           // The lower lid travels less than the upper until nearly closed.
           target[`upper_${side}`] = open;
           target[`lower_${side}`] = Math.sqrt(open);
         }
+      }
       state = age < 1600 ? "greeting" : "copying";
       title = age < 1600 ? "Oh, hello!" : "Your eyes are in charge";
       prompt =
@@ -175,7 +280,7 @@ export class EyeController {
         prompt = "Come closer and face the camera to try eye movements";
       }
     } else {
-      for (const latch of Object.values(this.lids)) latch.interrupt();
+      this.lids.interrupt();
       const missing = now - this.lastSeen;
       if (fresh && missing < 1500) {
         target = { ...this.pose };

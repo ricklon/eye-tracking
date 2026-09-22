@@ -103,6 +103,36 @@ frame to the page only while the exploration view is open, which is the only thi
 that draws it, and the camera's landmark overlay redraws only when new landmarks
 arrive rather than every animation frame.
 
+## Blinks, winks and squints
+
+`LidLatch` reads one eye, `LidPair` the two together (`controller.mjs`). Everything
+is relative to that eye: its open aperture, seeded from the first frames and then
+rising fast and forgotten over ~15 s, and its resting blink score. Fixed thresholds
+cannot work — on the recording in `tests/data-eye-sequence.jsonl` both eyes held shut
+read 0.26 of open on the left and 0.46 on the right, and a blink score can rest high
+on a face that is wide awake. Closure is the larger of the gap and the blink-score
+rise, except when the lids are plainly apart, where the gap wins so a high resting
+score cannot hold an eye shut.
+
+Level alone cannot separate a blink from a squint: in that recording the squint
+reached the same depth. Speed can, so a fall of 0.2 of closure within 100 ms latches
+the lid shut, as does a closure past 0.85 however slowly it arrives. A latch that is
+still only partly shut 400 ms later — a blink's lifetime — is a squint: it reopens and
+stays open until the eye opens properly. Blinks and winks fell 0.21..0.42 per 100 ms
+there, a squint 0.18..0.22 and open eyes 0.04, so the bands touch and the 400 ms rule
+settles the rest.
+
+A wink is only visible by comparison, because MediaPipe leaks some of it into the
+other eye, so an eye that trails its partner by 0.1 of closure while below 0.6 is held
+open — unless its own closure has been confirmed deep, since both eyes shut can still
+measure far apart. Winks toward one side can be much weaker than the other: in the
+recording, right winks left the other eye untouched, while two of three left winks
+still pulled the right lid partway.
+
+`tests/lids.test.mjs` replays that labelled recording (open eyes, blinks, winks each
+way, a held squint, a held closure) and is the check that these keep working. It holds
+measurements only; no images were recorded.
+
 ## Measurements and recording
 
 ### Explore tracking: the wink lab

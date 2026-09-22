@@ -1,4 +1,4 @@
-import { LidLatch } from "./controller.mjs";
+import { LidPair } from "./controller.mjs";
 
 export const CHALLENGES = [
   {
@@ -35,10 +35,10 @@ export const CHALLENGES = [
 
 // Live evidence is independent of the delayed animation. Missing data is never "open".
 export class EyeInspector {
-  latches = { left: new LidLatch(), right: new LidLatch() };
+  lids = new LidPair();
   last = null;
   reset() {
-    this.latches = { left: new LidLatch(), right: new LidLatch() };
+    this.lids = new LidPair();
     this.last = null;
   }
   update(packet, now, active) {
@@ -56,27 +56,29 @@ export class EyeInspector {
       this.reset();
     this.last = packet.timestamp_ms;
     const result = { fresh: true, face: true };
+    this.lids.update(packet, packet.timestamp_ms);
     for (const side of ["left", "right"]) {
-      const eye = packet.eyes?.[side];
-      if (!eye) {
-        this.latches[side] = new LidLatch();
+      if (!packet.eyes?.[side]) {
+        this.lids.reset(side);
         result[side] = "Unavailable";
         continue;
       }
-      const latch = this.latches[side];
-      const closed = latch.update(eye, packet.timestamp_ms);
+      const eye = packet.eyes[side],
+        latch = this.lids[side];
+      // The lids look apart but the blink score says shut: the animation trusts the
+      // gap, while this view says so instead of picking a side.
       const conflict =
         eye.blink_score !== null &&
-        eye.blink_score >= 0.55 &&
-        eye.aperture / latch.openGap > 0.5;
-      const open = latch.openness >= 0.6;
+        eye.blink_score - latch.baseline >= 0.4 &&
+        eye.aperture >= 0.85 * latch.openGap;
+      // A squint is partway shut on purpose, which is neither open nor closed.
       result[side] = conflict
         ? "Uncertain"
-        : closed
+        : latch.closed
           ? "Closed"
-          : open
-            ? "Open"
-            : "Uncertain";
+          : latch.squint || latch.closure > 0.4
+            ? "Uncertain"
+            : "Open";
     }
     return result;
   }
