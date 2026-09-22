@@ -38,8 +38,19 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      # Pages serves every file with a ten-minute cache, each expiring on its own
+      # clock, so a returning visitor can get new HTML with an old module and a page
+      # that throws rather than one that merely looks stale. Stamping every relative
+      # module and stylesheet with the commit makes each deploy fetch a matched set.
+      - name: Stamp asset URLs with the commit
+        run: |
+          site="$RUNNER_TEMP/site"
+          cp -r src/eye_tracking/static "$site"
+          find "$site" \( -name '*.html' -o -name '*.mjs' \) -print0 |
+            xargs -0 sed -i -E 's#("\./[A-Za-z0-9_.-]+\.(mjs|css))"#\1?v='"${GITHUB_SHA::8}"'"#g'
+          grep -q 'app.mjs?v=' "$site/index.html"
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: src/eye_tracking/static
+          path: ${{ runner.temp }}/site
       - id: deployment
         uses: actions/deploy-pages@v4
