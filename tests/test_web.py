@@ -65,7 +65,8 @@ def test_browser_packet_matches_python(angle, scale, closed):
 
 def test_browser_controller_contracts():
     assert shutil.which("node"), "Install Node.js to verify browser behavior"
-    tests = [str(Path(__file__).with_name(name)) for name in ("web.test.mjs", "eyemech.test.mjs")]
+    tests = sorted(str(path) for path in Path(__file__).parent.glob("*.test.mjs"))
+    assert tests, "no browser tests found"
     subprocess.run(["node", "--test", *tests], check=True)
 
 
