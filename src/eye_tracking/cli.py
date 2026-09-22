@@ -182,6 +182,12 @@ def main():
     web = commands.add_parser("web", help="Browser dashboard and software-eye kiosk")
     web.add_argument("--host", default="127.0.0.1", help="Bind address; default is local only")
     web.add_argument("--port", type=int, default=8080)
+    web.add_argument(
+        "--eyemech",
+        metavar="HOST[:PORT]",
+        help="Relay dashboard poses to an eyemech board's follow mode, e.g. eyemech.local",
+    )
+    web.add_argument("--bridge-port", type=int, default=8766, help="Local WebSocket bridge port")
     args = parser.parse_args()
     try:
         if args.command == "download-model":

@@ -65,7 +65,8 @@ def test_browser_packet_matches_python(angle, scale, closed):
 
 def test_browser_controller_contracts():
     assert shutil.which("node"), "Install Node.js to verify browser behavior"
-    subprocess.run(["node", "--test", str(Path(__file__).with_name("web.test.mjs"))], check=True)
+    tests = [str(Path(__file__).with_name(name)) for name in ("web.test.mjs", "eyemech.test.mjs")]
+    subprocess.run(["node", "--test", *tests], check=True)
 
 
 def test_server_serves_only_app_assets():

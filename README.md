@@ -49,10 +49,17 @@ wink, and gaze challenges. Each eye also shows a provisional iris-color swatch w
 there is enough clear image detail. Visitors can confirm or dispute what was detected and
 download their findings with a short measurement trace. No images are exported.
 
-The browser downloads pinned MediaPipe 0.10.32 runtime/WASM and the version 1 model
+The browser downloads pinned MediaPipe 1.0.1 runtime/WASM and the version 1 model
 from jsDelivr and Google on startup (subject to browser caching). Camera access
 requires localhost or HTTPS; plain HTTP on a LAN IP will not enable a phone's camera.
 See [docs/web.md](docs/web.md) for architecture, recording conventions, and limits.
+
+**Drive the mechanism:** engage the eyemech board in auto, manual or tracking mode,
+run `just web`, and in the staff panel **Drive the mechanism** tick **Send poses to
+the mechanism**. By default the browser connects straight to `eyemech.local` over
+WebSocket. That needs firmware that allows `http://localhost:8080`. For older
+firmware, `just web --eyemech eyemech.local` adds a local bridge. See
+[docs/eyemech.md](docs/eyemech.md#connecting-the-dashboard).
 Development checks require Node.js as well as uv to compare browser
 measurements with Python.
 
@@ -165,9 +172,10 @@ lid landmarks, not fitted curves.
 - `src/eye_tracking/cli.py`: camera, model, preview, and recording.
 - `src/eye_tracking/measurements.py`: pure measurement extraction and schema.
 - `tests/test_measurements.py`: geometry, side assignment, and missing-data behavior.
-- [docs/eyemech.md](docs/eyemech.md): existing mechanism interface and integration plan.
+- `src/eye_tracking/eyemech.py`, `static/eyemech.mjs`: mechanism bridge and pose mapping.
+- [docs/eyemech.md](docs/eyemech.md): mechanism interface, follow mode, and integration plan.
 
-Next: validate against live eyes, add neutral/open/closed calibration per person,
-refine the kiosk animation preview and add recording playback. Introduce a
-separate calibrated adapter for eyemech after the measurement behavior is settled.
-No hardware connection or servo output is implemented in this starter.
+Next: check gaze direction and side mirroring on the mechanism, add
+neutral/open/closed calibration per person, and add recording playback and
+keyframe export. The Python desktop tools do not drive hardware. Only the browser
+dashboard does, through the `--eyemech` bridge.

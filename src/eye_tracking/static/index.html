@@ -220,6 +220,11 @@
           ><select id="camera-select">
             <option value="">Default camera</option>
           </select>
+          <label for="tracker-delegate">Tracking on</label
+          ><select id="tracker-delegate">
+            <option value="CPU">CPU (best with built-in graphics)</option>
+            <option value="GPU">GPU (try with a separate graphics card)</option>
+          </select>
           <div class="button-row">
             <button id="start" class="primary">Start camera</button
             ><button id="stop" disabled>Stop</button>
@@ -228,6 +233,7 @@
             Camera access begins when you press Start. Model files download on
             first use.
           </p>
+          <p id="rate" class="hint"></p>
         </section>
         <section class="panel control playful-controls">
           <h2>Make it playful</h2>
@@ -359,8 +365,61 @@
         <button id="record" disabled>Record measurements</button>
         <p id="record-status" class="hint">Ready when your camera is.</p>
         <div class="connection-note">
-          <i></i> Software only · hardware is not connected
+          <i></i> <span id="hardware-note">Software only · hardware is not connected</span>
         </div>
+      </section>
+      <section class="panel control staff mechanism">
+        <span class="eyebrow">EYEMECH</span>
+        <h2>Drive the mechanism</h2>
+        <label for="mech-link">Connection</label
+        ><select id="mech-link">
+          <option value="direct">Direct to the board (WebSocket)</option>
+          <option value="bridge" disabled>Through the local bridge</option>
+        </select>
+        <label for="mech-host">Board address</label
+        ><input id="mech-host" value="eyemech.local" spellcheck="false" />
+        <p id="mech-status" class="hint" role="status">
+          Engage the mechanism in auto, manual or tracking mode, then send
+          poses. Direct needs this page at http://localhost:8080 and firmware
+          that allows that origin.
+        </p>
+        <label class="check"
+          ><input id="mech-enable" type="checkbox" /> Send poses to the
+          mechanism</label
+        >
+        <div class="slider-heading">
+          <label for="mech-gain">Gaze range</label
+          ><output id="mech-gain-value">1.0×</output>
+        </div>
+        <input
+          id="mech-gain"
+          type="range"
+          min="0.2"
+          max="1.5"
+          step="0.05"
+          value="1"
+        />
+        <label class="check"
+          ><input id="mech-reverse-lr" type="checkbox" /> Reverse left /
+          right</label
+        >
+        <label class="check"
+          ><input id="mech-reverse-ud" type="checkbox" /> Reverse up /
+          down</label
+        >
+        <label class="check"
+          ><input id="mech-mirror" type="checkbox" checked /> Mirror sides
+          (your left eye drives its right eye)</label
+        >
+        <label class="check"
+          ><input id="mech-decisive" type="checkbox" checked /> Decisive lids
+          (open or closed only; the screen keeps half-closed lids)</label
+        >
+        <p class="hint">
+          Sends what the eyes above show, echo included, about 50 times a
+          second. When nobody is in view it stops, and the mechanism eases back
+          to neutral and its previous mode.
+        </p>
       </section>
     </main>
     <footer class="staff">

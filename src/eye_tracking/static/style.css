@@ -63,7 +63,8 @@ header {
   margin-right: 8px;
 }
 button,
-select {
+select,
+#mech-host {
   font: inherit;
   font-size: 13px;
   border: 1px solid var(--line);
@@ -259,7 +260,8 @@ label {
   color: var(--muted);
   margin: 12px 0 8px;
 }
-select {
+select,
+#mech-host {
   width: 100%;
 }
 .button-row {
@@ -648,4 +650,14 @@ textarea {
   .map-toolbar {
     gap: 10px;
   }
+}
+.mechanism label.check {
+  margin: 10px 0;
+}
+.mechanism code {
+  font-size: 11px;
+}
+#mech-status.warning,
+#rate.warning {
+  color: #ffdb78;
 }

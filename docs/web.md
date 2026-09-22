@@ -48,7 +48,7 @@ as a static HTTPS site. Static assets are included in the Python package.
 
 ## Camera and runtime
 
-The runtime is pinned to `@mediapipe/tasks-vision@0.10.32`, and the model uses Google's
+The runtime is pinned to `@mediapipe/tasks-vision@1.0.1`, and the model uses Google's
 `face_landmarker/float16/1` bundle. Runtime and WASM come from jsDelivr; the model
 comes from Google Cloud Storage. These are downloads only; this application does
 not upload frames or measurements. Offline startup is not guaranteed by browser
@@ -72,6 +72,36 @@ kiosk's multi-face participant selector and does not recognize identity. Use one
 participant at a time. Display lid/gaze gains remain heuristic rather than personal
 calibration. The browser and Python display controllers are separate implementations;
 the shared compatibility guarantee is the tested measurement contract.
+
+### Frame rate
+
+The camera is asked for 640×480 at 30 fps. Under the camera controls the dashboard
+shows the delivered camera rate, the tracked rate, and the time tracking takes per
+frame. Blinks last 100–300 ms, so below about 20 fps they land on one frame or none.
+A camera steady at 7.5 or 15 fps is usually dimming for low light; front lighting
+fixes it. If tracking time is high and the tracked rate trails the camera, the
+computer is the limit. **Tracking on** selects the MediaPipe delegate: CPU (the
+default) or GPU (WebGL2 in the worker, falling back to CPU if it cannot start).
+Measured on an Intel UHD (Comet Lake) laptop over three runs, camera frames took
+28-34 ms on the CPU and 34-45 ms on the GPU, and the GPU path also competes with the page's own drawing;
+a machine with a separate graphics card may prefer GPU. The same tracker needs
+about half that on a still photo, so camera frames are the expensive input. The worker
+hands MediaPipe the camera's `VideoFrame` directly, saving a copy; over three runs
+that measured the same as converting to an `ImageBitmap` first, within run-to-run
+noise, and the conversion itself takes under a millisecond. A browser that refuses
+a `VideoFrame` falls back to bitmaps, which are made anyway while the exploration
+view needs the image. The rate line names the delegate in use and splits tracking time from all per-frame worker
+work. In Chrome and Edge the worker reads the camera itself: the page hands it a
+clone of the camera track through a `MediaStreamTrackProcessor`, so frames skip
+the page's copy, the screen-refresh wait and a postMessage each, and a slow frame
+drops stale ones instead of queueing them. The rate line says "direct feed". Other
+browsers, or a feed that fails, fall back to "page copy": the page grabs frames
+from the video element with up to two in flight, so the tracker starts the next
+frame as soon as it finishes one, and the iris color estimate (a full-frame pixel readback)
+runs about twice a second rather than every frame. The worker sends the full camera
+frame to the page only while the exploration view is open, which is the only thing
+that draws it, and the camera's landmark overlay redraws only when new landmarks
+arrive rather than every animation frame.
 
 ## Measurements and recording
 
@@ -183,9 +213,10 @@ status, mode selection, animation, and release, while a separate bounded pose st
 handles continuous eye motion. A browser-local camera session cannot be controlled
 by a remote MCP client until this bridge exists.
 
-The current normalized display pose is not a servo contract. Follow
-[eyemech.md](eyemech.md) for physical side mapping, person and servo calibration,
-independent lid support, engage/release behavior, and the firmware pose interface.
+The normalized display pose is not a servo contract. `static/eyemech.mjs` maps it to
+the firmware's follow pose and streams it to the board directly, or through the
+local bridge that `just web --eyemech HOST` starts. See [eyemech.md](eyemech.md#follow-mode-firmware-2026-09-17) for the mapping,
+side mirroring and firmware behavior.
 
 References:
 - [Google's Web Face Landmarker guide](https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker/web_js)
@@ -197,7 +228,7 @@ References:
 uv run pytest
 uv run ruff check .
 uv run ruff format --check .
-node --test tests/web.test.mjs
+node --test tests/web.test.mjs tests/eyemech.test.mjs
 ```
 
 Pytest includes the Node behavior tests and Python/browser measurement parity.

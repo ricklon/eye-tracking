@@ -1,6 +1,7 @@
 import { EyeController, headTurn } from "./controller.mjs";
 import { EYES, clamp, makePacket } from "./measurements.mjs";
 import { ExploreView } from "./explore-view.mjs";
+import { PoseSender, boardUrl } from "./eyemech.mjs";
 const $ = (id) => document.getElementById(id);
 const video = $("camera"),
   canvas = $("eyes"),
@@ -9,7 +10,10 @@ let controller = new EyeController(),
   worker = null,
   stream = null,
   packet = null;
-let busy = false,
+// Frames handed to the worker and not yet answered. Two keeps the tracker busy
+// while the next frame is grabbed, instead of idling a whole cycle between frames.
+const MAX_IN_FLIGHT = 2;
+let inFlight = 0,
   ready = false,
   starting = false,
   session = 0,
@@ -20,7 +24,63 @@ let recording = null,
   initializationTimer;
 let eyeDetail = false,
   landmarks = null;
+let bridge = null,
+  mech = null;
 const MAX_SAMPLES = 10000;
+// Events per second over the last second, for the camera and tracking readout.
+class RateMeter {
+  times = [];
+  tick(now) {
+    this.times.push(now);
+    while (this.times[0] <= now - 1000) this.times.shift();
+  }
+  rate(now) {
+    while (this.times.length && this.times[0] <= now - 1000) this.times.shift();
+    return this.times.length;
+  }
+}
+const cameraRate = new RateMeter(),
+  trackRate = new RateMeter();
+let trackMs = null,
+  workMs = null,
+  // A cloned camera track read by the worker itself, when the browser supports it.
+  feed = null,
+  delegate = null;
+function countCameraFrames(token) {
+  if (!video.requestVideoFrameCallback) return;
+  video.requestVideoFrameCallback((now) => {
+    if (token !== session) return;
+    cameraRate.tick(now);
+    countCameraFrames(token);
+  });
+}
+function showRates(now) {
+  if (!ready) {
+    $("rate").textContent = "";
+    return;
+  }
+  const settings = stream?.getVideoTracks()[0]?.getSettings() ?? {},
+    camera = video.requestVideoFrameCallback
+      ? cameraRate.rate(now)
+      : Math.round(settings.frameRate ?? 0),
+    tracked = trackRate.rate(now);
+  let advice = "";
+  if (camera && camera < 20)
+    advice = " Camera is slow: add light in front of you, or try another camera.";
+  else if (trackMs > 45 && tracked < camera - 4)
+    advice =
+      delegate === "GPU"
+        ? " Tracking is the bottleneck on this computer."
+        : " Tracking is the bottleneck: try Tracking on GPU.";
+  $("rate").textContent =
+    `Camera ${camera} fps · tracked ${tracked} fps` +
+    (trackMs === null
+      ? ""
+      : ` · ${Math.round(trackMs)} ms tracking on ${delegate}, ${Math.round(workMs ?? trackMs)} ms per frame in all`) +
+    (feed ? " · direct feed" : " · page copy") +
+    ` · ${settings.width ?? "?"}×${settings.height ?? "?"}.${advice}`;
+  $("rate").classList.toggle("warning", Boolean(advice));
+}
 const exploration = new ExploreView();
 function message(text) {
   $("message").textContent = text;
@@ -59,7 +119,10 @@ function stopCamera(reason = "Camera stopped. Press Start to reconnect.") {
   stream?.getTracks().forEach((track) => track.stop());
   stream = null;
   video.srcObject = null;
-  busy = ready = starting = false;
+  inFlight = 0;
+  ready = starting = false;
+  feed?.stop();
+  feed = null;
   if (packet)
     acceptPacket(
       makePacket(
@@ -78,6 +141,7 @@ function stopCamera(reason = "Camera stopped. Press Start to reconnect.") {
   $("start").disabled = false;
   $("stop").disabled = true;
   $("camera-select").disabled = false;
+  $("tracker-delegate").disabled = false;
   $("record").disabled = true;
   $("camera-empty").style.display = "";
   $("status").textContent = "Camera off";
@@ -109,6 +173,7 @@ async function startCamera() {
   $("start").disabled = true;
   $("stop").disabled = false;
   $("camera-select").disabled = true;
+  $("tracker-delegate").disabled = true;
   $("status").textContent = "Starting";
   message("Allow camera access. Loading the eye model…");
   try {
@@ -118,6 +183,8 @@ async function startCamera() {
       video: {
         width: { ideal: 640 },
         height: { ideal: 480 },
+        // Blinks last 100–300 ms; below ~20 fps they land on one frame or none.
+        frameRate: { ideal: 30 },
         ...(deviceId
           ? { deviceId: { exact: deviceId } }
           : { facingMode: "user" }),
@@ -133,13 +200,14 @@ async function startCamera() {
       stopCamera("Camera disconnected. Press Start to reconnect.");
     await video.play();
     if (token !== session) return;
+    countCameraFrames(token);
     $("camera-empty").style.display = "none";
     await cameras();
     if (token !== session) return;
     startedAt = performance.now();
     lastPacketAt = performance.now();
     lastVideoTime = -1;
-    // Classic worker: MediaPipe 0.10.32 loads its WASM glue using importScripts.
+    // Classic worker: MediaPipe loads its non-module WASM glue using importScripts.
     worker = new Worker(new URL("./tracker.worker.mjs", import.meta.url));
     worker.onerror = (event) => {
       if (token === session)
@@ -152,6 +220,12 @@ async function startCamera() {
       }
       if (data.type === "ready") {
         clearTimeout(initializationTimer);
+        delegate = data.delegate ?? "CPU";
+        feedWorker(stream.getVideoTracks()[0]);
+        worker.postMessage({
+          type: "frames",
+          on: document.body.classList.contains("exploring"),
+        });
         ready = true;
         starting = false;
         $("record").disabled = false;
@@ -159,12 +233,20 @@ async function startCamera() {
         lastPacketAt = performance.now();
         message("Tracking locally. Face the camera; try a slow blink or wink.");
       } else if (data.type === "packet") {
-        busy = false;
+        inFlight = Math.max(0, inFlight - 1);
         lastPacketAt = performance.now();
+        trackRate.tick(lastPacketAt);
+        trackMs = data.trackMs ?? null;
+        workMs = data.workMs ?? null;
         eyeDetail = data.eyeDetail;
         landmarks = data.landmarks;
         acceptPacket(data.packet);
         exploration.ingest(data, performance.now() - startedAt);
+      } else if (data.type === "feed-failed") {
+        // Keep tracking by copying frames from the video element instead.
+        feed?.stop();
+        feed = null;
+        inFlight = 0;
       } else if (data.type === "error")
         stopCamera(
           `Could not start tracking: ${data.message}. Check your connection and retry.`,
@@ -174,21 +256,48 @@ async function startCamera() {
       if (token === session)
         stopCamera("Model loading timed out. Check your connection and retry.");
     }, 90000);
-    worker.postMessage({ type: "init" });
+    worker.postMessage({ type: "init", delegate: $("tracker-delegate").value });
   } catch (error) {
     if (token === session) stopCamera(`Camera unavailable: ${error.message}`);
   }
 }
+// Hands the worker its own copy of the camera track, so frames skip the page's
+// copy, the screen-refresh wait and one postMessage each. Chrome and Edge support
+// this; elsewhere capture() keeps copying frames from the video element.
+function feedWorker(track) {
+  if (typeof MediaStreamTrackProcessor !== "function") return;
+  let clone = null;
+  try {
+    clone = track.clone();
+    const { readable } = new MediaStreamTrackProcessor({
+        track: clone,
+        maxBufferSize: 1,
+      });
+    worker.postMessage(
+      {
+        type: "stream",
+        readable,
+        startedAtEpoch: performance.timeOrigin + startedAt,
+      },
+      [readable],
+    );
+    feed = clone;
+  } catch {
+    clone?.stop();
+    feed = null;
+  }
+}
 async function capture() {
   if (
+    feed ||
     !ready ||
-    busy ||
+    inFlight >= MAX_IN_FLIGHT ||
     video.readyState < 2 ||
     video.currentTime === lastVideoTime
   )
     return;
   const token = session;
-  busy = true;
+  inFlight++;
   lastVideoTime = video.currentTime;
   const timestamp = performance.now() - startedAt;
   try {
@@ -261,6 +370,7 @@ function drawEye(x, y, upper, lower, pose) {
   ctx.restore();
 }
 // Landmarks come from the latest measured frame, so they can trail the live video slightly.
+let overlayDrawnAt = null;
 function drawCameraOverlay(fresh) {
   const overlay = $("camera-overlay"),
     octx = overlay.getContext("2d"),
@@ -268,6 +378,9 @@ function drawCameraOverlay(fresh) {
     H = Math.round(overlay.clientHeight * devicePixelRatio);
   if (overlay.width !== W || overlay.height !== H)
     [overlay.width, overlay.height] = [W, H];
+  const drawn = `${packet?.timestamp_ms}:${fresh}:${W}x${H}:${$("camera-tracking").checked}`;
+  if (drawn === overlayDrawnAt) return;
+  overlayDrawnAt = drawn;
   octx.clearRect(0, 0, W, H);
   const vw = video.videoWidth,
     vh = video.videoHeight;
@@ -362,9 +475,11 @@ function animate(now) {
   $("title").textContent = scene.title;
   $("prompt").textContent = scene.prompt;
   $("scene-state").textContent = scene.state;
+  mech?.update(scene, now);
   if (now - lastReadings > 100) {
     lastReadings = now;
     exploration.render(clock, ready);
+    showRates(now);
     const fresh = ready && packet && clock - packet.timestamp_ms < 750;
     for (const side of ["left", "right"])
       for (const [, key] of fields) {
@@ -420,6 +535,7 @@ $("explore-toggle").onclick = () => {
   $("visitor").textContent = "Visitor view";
   const exploring = document.body.classList.toggle("exploring");
   if (!exploring) exploration.endAttempt();
+  worker?.postMessage({ type: "frames", on: exploring });
   $("explore-toggle").textContent = exploring
     ? "Back to playful eyes"
     : "Explore tracking";
@@ -446,13 +562,96 @@ document.addEventListener("visibilitychange", () => {
       "Camera stopped while this tab was hidden. Press Start to resume.",
     );
 });
-window.addEventListener("pagehide", () => stopCamera());
+window.addEventListener("pagehide", () => {
+  stopCamera();
+  mech?.close();
+});
 window.addEventListener("beforeunload", (event) => {
   if (recording?.length) {
     event.preventDefault();
     event.returnValue = "";
   }
 });
+function mechStatus(text, problem = false) {
+  $("mech-status").textContent = text;
+  $("mech-status").classList.toggle("warning", problem);
+}
+function setMechSettings() {
+  const gain = Number($("mech-gain").value);
+  $("mech-gain-value").textContent = `${gain.toFixed(2)}×`;
+  if (!mech) return;
+  mech.settings = {
+    gazeGain: gain,
+    reverseLr: $("mech-reverse-lr").checked,
+    reverseUd: $("mech-reverse-ud").checked,
+    mirrorSides: $("mech-mirror").checked,
+    decisiveLids: $("mech-decisive").checked,
+  };
+}
+for (const id of ["mech-gain", "mech-reverse-lr", "mech-reverse-ud", "mech-mirror", "mech-decisive"])
+  $(id).oninput = setMechSettings;
+function remember(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {}
+}
+function recall(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+// Direct opens the board's own /ws/pose; the bridge (just web --eyemech) relays.
+function connectMech() {
+  mech?.close();
+  mech = null;
+  const direct = $("mech-link").value === "direct",
+    url = direct
+      ? boardUrl($("mech-host").value)
+      : `ws://${location.hostname}:${bridge.port}`;
+  $("mech-host").disabled = !direct;
+  if (!$("mech-enable").checked) {
+    mechStatus(direct ? "Not sending." : `Not sending. The bridge relays to ${bridge.board}.`);
+  } else if (!url) {
+    mechStatus("Enter a board address such as eyemech.local.", true);
+  } else if (direct && location.protocol === "https:") {
+    // A secure page cannot open ws:// to the board; serve it locally instead.
+    mechStatus("Direct needs this page served over http://localhost (just web).", true);
+  } else {
+    mech = new PoseSender(url, mechStatus);
+    setMechSettings();
+    mechStatus(`Connecting to ${url}…`);
+  }
+  $("hardware-note").textContent = mech
+    ? `Sending poses to ${direct ? url : bridge.board}`
+    : "Software only · hardware is not connected";
+}
+$("mech-link").value = recall("mech-link") === "bridge" ? "bridge" : "direct";
+$("mech-host").value = recall("mech-host") || "eyemech.local";
+$("mech-enable").onchange = connectMech;
+$("mech-link").onchange = () => {
+  remember("mech-link", $("mech-link").value);
+  connectMech();
+};
+$("mech-host").onchange = () => {
+  remember("mech-host", $("mech-host").value.trim());
+  connectMech();
+};
+// The local server answers bridge.json only when started with --eyemech.
+fetch("bridge.json")
+  .then((response) => (response.ok ? response.json() : null))
+  .then((value) => {
+    if (!value) return;
+    bridge = value;
+    $("mech-link").querySelector('[value="bridge"]').disabled = false;
+  })
+  .catch(() => {})
+  .finally(() => {
+    if ($("mech-link").value === "bridge" && !bridge) $("mech-link").value = "direct";
+    connectMech();
+  });
 setDelay();
 setGains();
+setMechSettings();
 requestAnimationFrame(animate);

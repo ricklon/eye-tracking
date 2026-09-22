@@ -58,7 +58,9 @@ export class ExploreView {
     this.packet = data.packet;
     this.landmarks = data.landmarks;
     this.detail = data.eyeDetail;
-    this.irisColors = data.irisColors;
+    // Colors arrive about twice a second; keep the last one while the face stays.
+    this.irisColors =
+      data.irisColors ?? (data.packet?.face_present ? this.irisColors : null);
     this.update(now, true);
   }
   clear() {

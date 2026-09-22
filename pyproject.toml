@@ -5,9 +5,10 @@ description = "MediaPipe face, iris, and eyelid tracking for future eyemech anim
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 dependencies = [
-    "mediapipe>=0.10.32,<0.11",
+    "mediapipe>=1.0.1,<1.1",
     "numpy>=1.26,<3",
     "opencv-contrib-python>=4.11,<5",
+    "websockets>=14,<17",
 ]
 
 [dependency-groups]

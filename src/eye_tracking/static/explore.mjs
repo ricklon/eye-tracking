@@ -246,7 +246,7 @@ export class ChallengeSession {
     return {
       report_schema_version: 1,
       measurement_schema_version: 1,
-      runtime: "MediaPipe Tasks Vision 0.10.32",
+      runtime: "MediaPipe Tasks Vision 1.0.1",
       model: "face_landmarker/float16/1",
       notes: notes.slice(0, 500),
       interpretation:
