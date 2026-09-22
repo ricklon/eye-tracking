@@ -133,9 +133,19 @@ face's blinks are not symmetric either: in the labelled recording the right wink
 the other eye untouched, and in a held-out one two soft blinks still read as left
 winks, the left eye reaching 0.45 of closure against the right's 0.29.
 
-`tests/lids.test.mjs` replays that labelled recording (open eyes, blinks, winks each
-way, a held squint, a held closure) and is the check that these keep working. It holds
-measurements only; no images were recorded.
+**Glasses change what can be measured.** The same face and sequence recorded with and
+without glasses: a blink reads 0.71 of the open gap through glasses and 0.19..0.35
+without, and a wink 0.63 against 0.01. The frames sit over the lid landmarks and hold
+them apart, so winks and blinks read as shallow, partial movements. That is why each
+eye's SHUT end is learned from closures it has actually shown rather than assumed: a
+fixed scale tuned for glasses makes a half-closed partner read as fully shut without
+them, turning every wink into a blink.
+
+`tests/lids.test.mjs` replays both recordings (open eyes, blinks, winks each
+way, a held squint, a held closure) and is the check that these keep working. They hold
+measurements only; no images were recorded. In the no-glasses take both eyes close
+briefly at the start of a wink, so what marks the wink there is the eye that stays
+shut, not the one that closes.
 
 ## Measurements and recording
 

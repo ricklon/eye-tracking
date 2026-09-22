@@ -38,6 +38,10 @@ export class LidLatch {
   // resting blink score vary by face, camera and distance, and fixed numbers would
   // read a narrow-eyed face, or one whose blink score rests high, as permanently shut.
   static SEED_FRAMES = 10;
+  // Where a shut eye lands, as a fraction of its open gap, until this eye shows its
+  // own: 0.45 with glasses on, whose frames hold the lid landmarks apart, against
+  // 0.05 without them on the same face.
+  static SHUT = 0.45;
   // How far the blink score rises above this eye's resting level when it is shut.
   static SCORE_SPAN = 0.5;
   closed = false;
@@ -47,6 +51,7 @@ export class LidLatch {
   confirmed = false;
   closure = 0; // 0 open .. 1 shut
   openGap = 0.25;
+  shutGap = null; // aperture this eye reaches when it is really shut
   baseline = 0.15; // this eye's blink score while open
   seen = 0;
   openness = 1;
@@ -72,11 +77,20 @@ export class LidLatch {
     // Only while this eye looks open by its own gap, so a closure cannot raise it.
     if (eye.blink_score !== null && eye.aperture >= 0.9 * this.openGap)
       this.baseline += (eye.blink_score - this.baseline) * 0.05;
+    // The shut end comes from closures this eye has actually shown, and forgets
+    // upward over ~60 s so one odd frame does not define it.
+    if (this.closed && this.confirmed)
+      this.shutGap = Math.min(this.shutGap ?? eye.aperture, eye.aperture);
+    else if (this.shutGap !== null)
+      this.shutGap += (this.openGap * LidLatch.SHUT - this.shutGap) * (1 - Math.exp(-dt / 60000));
   }
-  // 0 when the eye is open, 1 when it is as shut as this eye gets.
+  // 0 when the eye is open, 1 when it is as shut as this eye gets -- measured against
+  // both of this eye's own ends, because how far the lids appear to meet depends on
+  // the face and on whether glasses sit over them.
   evidence(eye) {
     const open = eye.aperture / this.openGap,
-      gap = clamp((0.95 - open) / 0.5),
+      shut = clamp(this.shutGap === null ? LidLatch.SHUT : this.shutGap / this.openGap, 0.02, 0.6),
+      gap = clamp((0.95 - open) / (0.95 - shut)),
       score =
         eye.blink_score === null
           ? 0
@@ -158,7 +172,9 @@ export class LidPair {
   // blinking with it: the two eyes rarely fall at exactly the same speed, and without
   // this the faster one alone reads as a wink.
   static TOGETHER = 0.45;
-  static WINK_OPEN = 0.6; // the quiet eye must be no more closed than this
+  // An eye this far shut is not the quiet half of a wink, whatever its partner does:
+  // two eyes held shut still measure a little apart.
+  static WINK_OPEN = 0.8;
   left = new LidLatch();
   right = new LidLatch();
   interrupt() {
@@ -178,27 +194,31 @@ export class LidPair {
       ["left", "right"],
       ["right", "left"],
     ];
-    for (const [side, other] of sides)
+    for (const [side, other] of sides) {
+      const lead = this[side].closure - this[other].closure;
+      // Both eyes equally far into a closure: a blink, even when only the faster eye
+      // passed its own fall test. Never an eye already judged to be squinting.
       if (
         this[side].closed &&
+        !this[other].closed &&
         !this[other].squint &&
+        lead < LidPair.WINK_GAP &&
         this[other].closure >= LidPair.TOGETHER
       )
         this[other].latch(timestamp);
-    for (const [side, other] of sides) {
-      const winking = this[side],
-        quiet = this[other];
+      // One eye clearly ahead of the other: a wink, so the trailing eye is held open.
+      // MediaPipe leaks part of a wink into the other eye, and the leak grows with the
+      // wink, so the test is how far apart they are rather than a level. An eye whose
+      // own closure was confirmed deep keeps it: both eyes shut can measure far apart.
       if (
-        winking.closed &&
-        quiet.closed &&
-        // Not once the quiet eye's own closure has been confirmed deep: both eyes
-        // shut can still measure far apart (0.26 against 0.46 of open on this face).
-        !quiet.confirmed &&
-        winking.closure - quiet.closure >= LidPair.WINK_GAP &&
-        quiet.closure < LidPair.WINK_OPEN
+        this[side].closed &&
+        this[other].closed &&
+        !this[other].confirmed &&
+        this[other].closure < LidPair.WINK_OPEN &&
+        lead >= LidPair.WINK_GAP
       ) {
-        quiet.closed = false;
-        quiet.openness = 1 - quiet.closure;
+        this[other].closed = false;
+        this[other].openness = 1 - this[other].closure;
       }
     }
     return this;

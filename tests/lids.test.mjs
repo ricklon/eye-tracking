@@ -12,7 +12,15 @@ const rows = readFileSync(new URL("./data-eye-sequence.jsonl", import.meta.url),
   .split("\n")
   .map((line) => JSON.parse(line));
 
-function replay() {
+function replayFile(name) {
+  return replay(
+    readFileSync(new URL(name, import.meta.url), "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line)),
+  );
+}
+function replay(rows) {
   const lids = new LidPair(),
     frames = [];
   for (const packet of rows) {
@@ -27,9 +35,15 @@ function replay() {
   }
   return frames;
 }
-const frames = replay();
-const between = (lo, hi) => frames.filter((f) => f.t >= lo && f.t <= hi);
-const shut = (lo, hi, side) => between(lo, hi).filter((f) => f[side]).length;
+const frames = replay(rows);
+// The same face and sequence recorded again without glasses, which change what the
+// lid landmarks can see: a blink reads 0.19..0.35 of the open gap here against 0.71
+// with glasses, and a wink reaches 0.01. Both eyes close briefly at the start of the
+// winks in this take, so the wink is the eye that STAYS shut.
+const without = replayFile("./data-eye-sequence-no-glasses.jsonl");
+const between = (lo, hi, set = frames) => set.filter((f) => f.t >= lo && f.t <= hi);
+const shut = (lo, hi, side, set = frames) =>
+  between(lo, hi, set).filter((f) => f[side]).length;
 
 test("open eyes never read as closed", () => {
   for (const [lo, hi] of [
@@ -137,4 +151,37 @@ test("a stalled or rewound clock does not fabricate a blink", () => {
   assert.equal(lids.left.closed, false, "no blink invented across a frame gap");
   lids.update({ eyes: { left: eye(0.02), right: eye(0.3) } }, 9033);
   assert.equal(lids.left.closed, true, "a shut eye still reads as shut");
+});
+
+test("the same face without glasses still reads blinks, winks and a closure", () => {
+  // Glasses hold the lid landmarks apart, so a shut eye lands much lower here. Each
+  // eye's own shut point is learned, which is what keeps one scale from breaking the
+  // other: at a fixed scale a half-closed partner reads as fully shut.
+  for (const [lo, hi] of [
+    [2.7, 3.3],
+    [3.5, 4.0],
+  ]) {
+    assert.ok(shut(lo, hi, "left", without) >= 2, `left blink ${lo}s`);
+    assert.ok(shut(lo, hi, "right", without) >= 2, `right blink ${lo}s`);
+  }
+  for (const [lo, hi] of [
+    [4.7, 5.4],
+    [5.5, 6.4],
+  ]) {
+    assert.ok(shut(lo, hi, "left", without) >= 3, `left wink ${lo}s closes left`);
+    assert.ok(
+      shut(lo, hi, "right", without) <= 3,
+      `left wink ${lo}s keeps right open`,
+    );
+  }
+  // A wink where both eyes shut at the outset: the winking eye is the one held shut.
+  assert.ok(
+    shut(9.1, 9.8, "right", without) >= 2 * shut(9.1, 9.8, "left", without),
+    "right wink holds the right eye shut longer",
+  );
+  const hold = between(12.1, 15.3, without);
+  assert.ok(
+    shut(12.1, 15.3, "left", without) >= hold.length * 0.9,
+    "the held closure stays shut",
+  );
 });
