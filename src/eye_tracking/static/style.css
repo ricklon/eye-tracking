@@ -661,3 +661,29 @@ textarea {
 #rate.warning {
   color: #ffdb78;
 }
+/* The visitor's only control: everything else is hidden on the play page. */
+.play {
+  display: none;
+  margin-top: 18px;
+  font-size: 15px;
+  padding: 14px 26px;
+}
+.visitor .play {
+  display: inline-block;
+}
+.visitor.exploring .play {
+  display: none;
+}
+.play-note {
+  display: none;
+  margin: 14px auto 0;
+  max-width: 460px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.visitor .play-note {
+  display: block;
+}
+.visitor.exploring .play-note {
+  display: none;
+}

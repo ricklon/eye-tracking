@@ -6,6 +6,24 @@ Use **Stop** before selecting a different camera. **Visitor view** hides the sta
 panels; **Fullscreen** uses the browser fullscreen API. The idle eyes work before
 camera access or model loading.
 
+## Two pages
+
+The same application starts in one of two views (`views.mjs`):
+
+- **Play** — the default for the published site. Big eyes, one **Start the camera**
+  button on the stage, the wink lab behind *Explore tracking*, and nothing else. The
+  camera panel, per-eye readings, recording and mechanism controls are hidden, so the
+  status messages that normally live in the camera panel are shown on the stage.
+- **Diagnostics** — the default when the page is served from localhost over plain
+  HTTP, which means someone is working on it. Everything above plus the camera
+  controls, frame-rate line, per-eye measurements, recording, and the mechanism panel.
+
+Either can be asked for by address, `?play=1` and `?diagnostics=1`, and the header
+button switches between them, so a link goes where it says. The mechanism panel is
+hidden outright unless the page could drive the board — a published HTTPS page may not
+open a plain `ws://` socket, and the board only admits localhost origins — rather than
+offering a control that cannot work.
+
 ## Architecture
 
 This first increment borrows smartcar4activities' dashboard organization and

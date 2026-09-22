@@ -2,6 +2,7 @@ import { EyeController, headTurn } from "./controller.mjs";
 import { EYES, clamp, makePacket } from "./measurements.mjs";
 import { ExploreView } from "./explore-view.mjs";
 import { PoseSender, boardUrl } from "./eyemech.mjs";
+import { canDriveMechanism, startingView } from "./views.mjs";
 const $ = (id) => document.getElementById(id);
 const video = $("camera"),
   canvas = $("eyes"),
@@ -84,6 +85,8 @@ function showRates(now) {
 const exploration = new ExploreView();
 function message(text) {
   $("message").textContent = text;
+  // The play page hides the camera panel, so anything worth saying goes on the stage.
+  $("play-note").textContent = text;
 }
 function downloadRecording() {
   if (recording === null) return;
@@ -140,6 +143,7 @@ function stopCamera(reason = "Camera stopped. Press Start to reconnect.") {
   setGains();
   $("start").disabled = false;
   $("stop").disabled = true;
+  showPlay();
   $("camera-select").disabled = false;
   $("tracker-delegate").disabled = false;
   $("record").disabled = true;
@@ -172,6 +176,7 @@ async function startCamera() {
   starting = true;
   $("start").disabled = true;
   $("stop").disabled = false;
+  showPlay();
   $("camera-select").disabled = true;
   $("tracker-delegate").disabled = true;
   $("status").textContent = "Starting";
@@ -522,13 +527,20 @@ $("record").onclick = () => {
   $("record").textContent = "Stop & download";
   $("record-status").textContent = "Recording raw measurements…";
 };
-$("visitor").onclick = () => {
-  exploration.endAttempt();
-  document.body.classList.remove("exploring");
-  $("explore-toggle").textContent = "Explore tracking";
-  $("explore-toggle").setAttribute("aria-pressed", "false");
-  const visitor = document.body.classList.toggle("visitor");
-  $("visitor").textContent = visitor ? "Staff dashboard" : "Visitor view";
+const playing = startingView(location) === "play";
+document.body.classList.toggle("visitor", playing);
+$("view-switch").textContent = playing ? "Diagnostics" : "Back to play";
+$("view-switch").onclick = () => {
+  // Its own address, so the page someone wants is the page they can link to.
+  location.search = playing ? "?diagnostics=1" : "?play=1";
+};
+function showPlay() {
+  $("play").textContent = stream || starting ? "Stop the camera" : "Start the camera";
+}
+$("play").onclick = () => {
+  if (stream || starting) stopCamera();
+  else startCamera();
+  showPlay();
 };
 $("explore-toggle").onclick = () => {
   document.body.classList.remove("visitor");
@@ -649,7 +661,10 @@ fetch("bridge.json")
   .catch(() => {})
   .finally(() => {
     if ($("mech-link").value === "bridge" && !bridge) $("mech-link").value = "direct";
-    connectMech();
+    // A published page cannot reach the board, so it does not pretend otherwise.
+    const drivable = canDriveMechanism(location, bridge);
+    document.querySelector(".mechanism").hidden = !drivable;
+    if (drivable) connectMech();
   });
 setDelay();
 setGains();

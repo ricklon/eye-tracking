@@ -49,6 +49,12 @@ wink, and gaze challenges. Each eye also shows a provisional iris-color swatch w
 there is enough clear image detail. Visitors can confirm or dispute what was detected and
 download their findings with a short measurement trace. No images are exported.
 
+The published site opens in **play** mode: the animated eyes, one camera button and
+the wink lab. `just web` serves the same page from localhost and opens the
+**diagnostics** view instead, with camera controls, live frame rate, per-eye
+measurements, recording and the mechanism panel. `?play=1` and `?diagnostics=1` ask
+for either one.
+
 The browser downloads pinned MediaPipe 1.0.1 runtime/WASM and the version 1 model
 from jsDelivr and Google on startup (subject to browser caching). Camera access
 requires localhost or HTTPS; plain HTTP on a LAN IP will not enable a phone's camera.
