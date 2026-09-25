@@ -3,6 +3,7 @@ name = "eye-tracking"
 version = "0.1.0"
 description = "MediaPipe face, iris, and eyelid tracking for future eyemech animation"
 readme = "README.md"
+license = { text = "Apache-2.0" }
 requires-python = ">=3.11,<3.14"
 dependencies = [
     "mediapipe>=1.0.1,<1.1",
