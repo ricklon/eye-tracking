@@ -98,6 +98,27 @@ def test_bridge_relays_poses_errors_and_stops_on_disconnect(board, bridge):
     assert board.received.get(timeout=2) == {"stop": True}
 
 
+def test_bridge_passes_board_frames_through_while_idle():
+    """Newer firmware sends a heartbeat on its own; the page sees it without a pose."""
+
+    def heartbeat(ws):
+        ws.send(json.dumps({"state": "idle", "mode": "auto"}))
+        for _ in ws:
+            pass
+
+    board = start(serve(heartbeat, "127.0.0.1", 0))
+    server = start(
+        serve_bridge(f"127.0.0.1:{board.socket.getsockname()[1]}", "127.0.0.1", 0, [ORIGIN])
+    )
+    try:
+        with connect(f"ws://127.0.0.1:{server.socket.getsockname()[1]}", origin=ORIGIN) as ws:
+            assert "bridge ready" in json.loads(ws.recv(timeout=2))["status"]
+            assert json.loads(ws.recv(timeout=2)) == {"state": "idle", "mode": "auto"}
+    finally:
+        server.shutdown()
+        board.shutdown()
+
+
 def test_board_connection_disables_nagle(board):
     upstream = Board(board_uri(board.host))
     try:

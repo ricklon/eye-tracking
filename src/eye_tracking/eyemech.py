@@ -7,6 +7,7 @@ browser already sends mechanism units, so no mapping or calibration happens here
 Pose messages use the firmware's schema: ``lr``, ``ud``, ``lid_tl``, ``lid_bl``,
 ``lid_tr``, ``lid_br``, each 0..1, or ``{"stop": true}``. The bridge replies with
 ``{"status": ...}`` or ``{"error": ...}`` text frames; accepted poses get no reply.
+Board frames, including newer firmware's ``{"state": ...}`` heartbeat, pass through.
 """
 
 import json
@@ -21,6 +22,8 @@ from websockets.sync.server import serve
 
 POSE_KEYS = frozenset({"lr", "ud", "lid_tl", "lid_bl", "lid_tr", "lid_br"})
 RECONNECT_S = 1.0
+# How often the bridge passes board frames on while the dashboard sends nothing.
+POLL_S = 0.1
 
 
 def parse_message(text):
@@ -78,20 +81,40 @@ class Board:
         return connection
 
     def send(self, message):
-        """Forward one message; return board error texts received since the last send."""
+        """Forward one message; return board frames received since the last call."""
         connection = self._open()
         try:
             connection.send(json.dumps(message))
-            replies = []
-            while True:
-                try:
-                    replies.append(connection.recv(timeout=0))
-                except TimeoutError:
-                    return replies
+            return self._drain(connection)
         except (OSError, WebSocketException) as exc:
-            self.close()
-            self.failed_at = time.monotonic()
-            raise ConnectionError(f"lost the board: {exc}") from exc
+            self._lost(exc)
+
+    def poll(self):
+        """Return board frames waiting since the last call, opening the connection.
+
+        Quiet during the reconnect cooldown, so each failed attempt is reported once.
+        """
+        if self.connection is None and time.monotonic() - self.failed_at < RECONNECT_S:
+            return []
+        connection = self._open()
+        try:
+            return self._drain(connection)
+        except (OSError, WebSocketException) as exc:
+            self._lost(exc)
+
+    @staticmethod
+    def _drain(connection):
+        replies = []
+        while True:
+            try:
+                replies.append(connection.recv(timeout=0))
+            except TimeoutError:
+                return replies
+
+    def _lost(self, exc):
+        self.close()
+        self.failed_at = time.monotonic()
+        raise ConnectionError(f"lost the board: {exc}") from exc
 
     def close(self):
         if self.connection is not None:
@@ -112,10 +135,15 @@ class Bridge:
             return
         try:
             client.send(json.dumps({"status": f"bridge ready for {self.board.uri}"}))
-            for text in client:
+            while True:
                 try:
-                    message = parse_message(text)
-                    replies = self.board.send(message)
+                    text = client.recv(timeout=POLL_S)
+                except TimeoutError:
+                    text = None
+                try:
+                    replies = (
+                        self.board.poll() if text is None else self.board.send(parse_message(text))
+                    )
                 except (ValueError, ConnectionError) as exc:
                     client.send(json.dumps({"error": str(exc)}))
                     continue

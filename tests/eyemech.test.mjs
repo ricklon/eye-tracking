@@ -144,3 +144,21 @@ test("sender reconnects after a drop and says what the robot is doing", () => {
   assert.equal(opened.length, 2);
   assert.equal(sender.link(1500).level, "connecting");
 });
+test("sender trusts the board's heartbeat when the firmware sends one", () => {
+  let t = 0;
+  const sender = new PoseSender("ws://x", () => {}, FakeSocket, () => t);
+  const beat = (state) => sender.socket.onmessage({ data: JSON.stringify(state) });
+  beat({ state: "refused", reason: "released", mode: "standby" });
+  assert.deepEqual(sender.link(100), {
+    level: "refused",
+    text: "Robot not following · its motors are released",
+  });
+  // A heartbeat keeps the panel's status line for real messages.
+  sender.update({ state: "copying", pose }, 0);
+  beat({ state: "idle", mode: "auto" });
+  assert.equal(sender.link(100).text, "Robot connected · waiting for a face");
+  beat({ state: "following", mode: "follow" });
+  assert.equal(sender.link(100).level, "following");
+  // Silence while the socket stays open means the board stopped answering.
+  assert.equal(sender.link(sender.heartbeatMs + 1).text, "Robot stopped answering");
+});

@@ -73,6 +73,12 @@ export class LidGate {
 // States where the eyes copy a person. Otherwise the board is released to its own
 // mode: one stop, then silence, and it eases to neutral.
 const DRIVING = new Set(["greeting", "copying", "following", "waiting"]);
+const REFUSALS = {
+  released: "its motors are released",
+  standby: "it is in standby",
+  calibration: "it is calibrating",
+  anim: "it is playing an animation",
+};
 // Streams poses to the board, or the local bridge, at a steady rate. The board slews each servo
 // toward the latest pose, so a steady, already-smoothed stream is what makes motion
 // smooth; a backed-up socket drops frames rather than delivering them late. A dropped
@@ -80,9 +86,12 @@ const DRIVING = new Set(["greeting", "copying", "following", "waiting"]);
 export class PoseSender {
   interval = 20;
   retryMs = 1000;
-  // The board refuses every pose it cannot follow, so a quiet spell this long after
-  // the last refusal means it is following again. Accepted poses get no reply.
+  // Older firmware replies only to refused poses, so a quiet spell this long after
+  // the last refusal means it is following again.
   refusalMs = 1500;
+  // Newer firmware sends {"state": ...} every 333 ms; this long without one while the
+  // socket is open means the board has stopped answering.
+  heartbeatMs = 1200;
   settings = { ...MECH_DEFAULTS };
   lastSent = -Infinity;
   driving = false;
@@ -98,7 +107,7 @@ export class PoseSender {
   }
   connect() {
     const { url, onStatus } = this;
-    this.closedAt = this.refusal = null;
+    this.closedAt = this.refusal = this.heartbeat = null;
     this.socket = new this.Socket(url);
     this.socket.onopen = () => onStatus(`Connected to ${url}`, false);
     // A refused origin looks the same to a page as an unreachable board.
@@ -117,7 +126,8 @@ export class PoseSender {
       } catch {
         return;
       }
-      if (reply.error) {
+      if (typeof reply.state === "string") this.heartbeat = { ...reply, at: this.clock() };
+      else if (reply.error) {
         this.refusal = { text: reply.error, at: this.clock() };
         onStatus(reply.error, true);
       } else if (reply.status) onStatus(reply.status, false);
@@ -131,11 +141,28 @@ export class PoseSender {
     if (this.closedAt != null)
       return { level: "lost", text: "Robot disconnected · reconnecting" };
     if (!this.open) return { level: "connecting", text: "Connecting to the robot…" };
+    if (this.heartbeat) return this.boardLink(now);
     if (this.refusal && now - this.refusal.at < this.refusalMs)
       return { level: "refused", text: `Robot not following · ${this.refusal.text}` };
     return this.driving
       ? { level: "following", text: "Robot is following you" }
       : { level: "ready", text: "Robot connected · waiting for a face" };
+  }
+  // The board's own account, from its heartbeat.
+  boardLink(now) {
+    const { state, reason, at } = this.heartbeat;
+    if (now - at > this.heartbeatMs)
+      return { level: "lost", text: "Robot stopped answering" };
+    if (state === "refused")
+      return {
+        level: "refused",
+        text: `Robot not following · ${REFUSALS[reason] ?? reason ?? "refused"}`,
+      };
+    if (state === "following" && this.driving)
+      return { level: "following", text: "Robot is following you" };
+    if (state === "returning")
+      return { level: "ready", text: "Robot easing back to neutral" };
+    return { level: "ready", text: "Robot connected · waiting for a face" };
   }
   update(scene, now) {
     if (this.closedAt != null && now - this.closedAt >= this.retryMs) this.connect();
