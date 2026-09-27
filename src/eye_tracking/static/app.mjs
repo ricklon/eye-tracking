@@ -481,6 +481,7 @@ function animate(now) {
   $("prompt").textContent = scene.prompt;
   $("scene-state").textContent = scene.state;
   mech?.update(scene, now);
+  showRobotLink(now);
   if (now - lastReadings > 100) {
     lastReadings = now;
     exploration.render(clock, ready);
@@ -583,6 +584,17 @@ window.addEventListener("beforeunload", (event) => {
     event.returnValue = "";
   }
 });
+let robotLink = "";
+// The stage badge: large, and on the play page too, since the robot is part of the show.
+function showRobotLink(now) {
+  const { level, text } = mech?.link(now) ?? { level: "off", text: "Software preview" };
+  if (robotLink === level + text) return;
+  robotLink = level + text;
+  $("robot-link").dataset.level = level;
+  $("robot-text").textContent = text;
+  $("hardware-note").textContent =
+    level === "off" ? "Software only · hardware is not connected" : text;
+}
 function mechStatus(text, problem = false) {
   $("mech-status").textContent = text;
   $("mech-status").classList.toggle("warning", problem);
@@ -622,7 +634,9 @@ function connectMech() {
       ? boardUrl($("mech-host").value)
       : `ws://${location.hostname}:${bridge.port}`;
   $("mech-host").disabled = !direct;
-  if (!$("mech-enable").checked) {
+  const enabled = $("mech-enable").getAttribute("aria-pressed") === "true";
+  $("mech-enable").textContent = enabled ? "Disconnect the robot" : "Connect the robot";
+  if (!enabled) {
     mechStatus(direct ? "Not sending." : `Not sending. The bridge relays to ${bridge.board}.`);
   } else if (!url) {
     mechStatus("Enter a board address such as eyemech.local.", true);
@@ -634,13 +648,15 @@ function connectMech() {
     setMechSettings();
     mechStatus(`Connecting to ${url}…`);
   }
-  $("hardware-note").textContent = mech
-    ? `Sending poses to ${direct ? url : bridge.board}`
-    : "Software only · hardware is not connected";
+  showRobotLink(performance.now());
 }
 $("mech-link").value = recall("mech-link") === "bridge" ? "bridge" : "direct";
 $("mech-host").value = recall("mech-host") || "eyemech.local";
-$("mech-enable").onchange = connectMech;
+$("mech-enable").onclick = () => {
+  const button = $("mech-enable");
+  button.setAttribute("aria-pressed", String(button.getAttribute("aria-pressed") !== "true"));
+  connectMech();
+};
 $("mech-link").onchange = () => {
   remember("mech-link", $("mech-link").value);
   connectMech();

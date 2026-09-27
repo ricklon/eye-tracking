@@ -75,23 +75,41 @@ export class LidGate {
 const DRIVING = new Set(["greeting", "copying", "following", "waiting"]);
 // Streams poses to the board, or the local bridge, at a steady rate. The board slews each servo
 // toward the latest pose, so a steady, already-smoothed stream is what makes motion
-// smooth; a backed-up socket drops frames rather than delivering them late.
+// smooth; a backed-up socket drops frames rather than delivering them late. A dropped
+// connection is reopened, since the board only eases to neutral and waits.
 export class PoseSender {
   interval = 20;
+  retryMs = 1000;
+  // The board refuses every pose it cannot follow, so a quiet spell this long after
+  // the last refusal means it is following again. Accepted poses get no reply.
+  refusalMs = 1500;
   settings = { ...MECH_DEFAULTS };
   lastSent = -Infinity;
   driving = false;
   lids = new LidGate();
-  constructor(url, onStatus = () => {}, Socket = globalThis.WebSocket) {
-    this.onStatus = onStatus;
-    this.socket = new Socket(url);
+  constructor(
+    url,
+    onStatus = () => {},
+    Socket = globalThis.WebSocket,
+    clock = () => performance.now(),
+  ) {
+    Object.assign(this, { url, onStatus, Socket, clock });
+    this.connect();
+  }
+  connect() {
+    const { url, onStatus } = this;
+    this.closedAt = this.refusal = null;
+    this.socket = new this.Socket(url);
     this.socket.onopen = () => onStatus(`Connected to ${url}`, false);
     // A refused origin looks the same to a page as an unreachable board.
-    this.socket.onclose = () =>
+    this.socket.onclose = () => {
+      this.closedAt = this.clock();
+      this.driving = false;
       onStatus(
-        `Not connected to ${url}. Check the address, that the board is on, and that its firmware allows this page's origin.`,
+        `Not connected to ${url}. Retrying. Check the address, that the board is on, and that its firmware allows this page's origin.`,
         true,
       );
+    };
     this.socket.onmessage = (event) => {
       let reply;
       try {
@@ -99,14 +117,28 @@ export class PoseSender {
       } catch {
         return;
       }
-      if (reply.error) onStatus(reply.error, true);
-      else if (reply.status) onStatus(reply.status, false);
+      if (reply.error) {
+        this.refusal = { text: reply.error, at: this.clock() };
+        onStatus(reply.error, true);
+      } else if (reply.status) onStatus(reply.status, false);
     };
   }
   get open() {
     return this.socket.readyState === 1;
   }
+  // What the robot is doing, as far as this page can tell, for the stage badge.
+  link(now) {
+    if (this.closedAt != null)
+      return { level: "lost", text: "Robot disconnected · reconnecting" };
+    if (!this.open) return { level: "connecting", text: "Connecting to the robot…" };
+    if (this.refusal && now - this.refusal.at < this.refusalMs)
+      return { level: "refused", text: `Robot not following · ${this.refusal.text}` };
+    return this.driving
+      ? { level: "following", text: "Robot is following you" }
+      : { level: "ready", text: "Robot connected · waiting for a face" };
+  }
   update(scene, now) {
+    if (this.closedAt != null && now - this.closedAt >= this.retryMs) this.connect();
     if (!this.open) return false;
     if (!DRIVING.has(scene.state)) {
       if (this.driving) this.stop();

@@ -70,7 +70,12 @@ The panel maps the displayed pose (`static/eyemech.mjs`):
   Echo delay applies either way.
 
 The page streams about 50 Hz from its animation loop and drops a frame rather than
-queueing one behind a slow socket. Smoothing happens in the dashboard controller
+queueing one behind a slow socket. A dropped socket is reopened after a second. A badge
+on the stage, visible on the play page too, shows connecting, following, connected but
+refused (the board's error, cleared after 1.5 s without another), or disconnected.
+Accepted poses get no reply, so "following" means only that the socket is open and
+nothing was refused. Poses already in TCP buffers or the board's receive window
+cannot be dropped by any sender, so a Wi-Fi stall can still deliver a short backlog. Smoothing happens in the dashboard controller
 (time-based easing, blink latch), and the firmware only rate-limits. Poses are sent
 while greeting, copying, following or briefly waiting. Otherwise one stop is sent and
 the board returns to its own mode. The mapping has no person calibration yet:

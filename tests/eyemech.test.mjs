@@ -108,3 +108,39 @@ test("sender gates lids by default and can pass them through", () => {
   sender.update({ state: "idle", pose: scene.pose }, 200);
   assert.equal(sender.lids.eyes.right.closed, false);
 });
+test("sender reconnects after a drop and says what the robot is doing", () => {
+  let t = 0;
+  const opened = [];
+  class Recorded extends FakeSocket {
+    readyState = 0;
+    constructor() {
+      super();
+      opened.push(this);
+    }
+  }
+  const sender = new PoseSender("ws://x", () => {}, Recorded, () => t);
+  const copying = { state: "copying", pose };
+  assert.equal(sender.link(0).level, "connecting");
+  sender.socket.readyState = 1;
+  assert.equal(sender.link(0).level, "ready");
+  sender.update(copying, 0);
+  assert.equal(sender.link(0).level, "following");
+  // Every refused pose renews the refusal; a quiet spell clears it.
+  t = 10;
+  sender.socket.onmessage({ data: JSON.stringify({ error: "not accepting poses" }) });
+  assert.deepEqual(sender.link(100), {
+    level: "refused",
+    text: "Robot not following · not accepting poses",
+  });
+  assert.equal(sender.link(10 + sender.refusalMs).level, "following");
+  // A drop is reported at once and retried after retryMs.
+  t = 500;
+  sender.socket.readyState = 3;
+  sender.socket.onclose();
+  assert.equal(sender.link(500).level, "lost");
+  assert.equal(sender.update(copying, 600), false);
+  assert.equal(opened.length, 1);
+  sender.update(copying, 500 + sender.retryMs);
+  assert.equal(opened.length, 2);
+  assert.equal(sender.link(1500).level, "connecting");
+});

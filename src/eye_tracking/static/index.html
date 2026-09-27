@@ -40,7 +40,8 @@
           <p id="play-note" class="play-note" role="status"></p>
         </div>
         <div class="stage-bottom">
-          <span><i></i> Software preview</span
+          <span id="robot-link" class="robot-link" data-level="off" role="status"
+            ><i></i> <span id="robot-text">Software preview</span></span
           ><span id="scene-state">Idle</span>
         </div>
       </section>
@@ -385,10 +386,9 @@
           poses. Direct needs this page at http://localhost:8080 and firmware
           that allows that origin.
         </p>
-        <label class="check"
-          ><input id="mech-enable" type="checkbox" /> Send poses to the
-          mechanism</label
-        >
+        <button id="mech-enable" class="mech-toggle" aria-pressed="false">
+          Connect the robot
+        </button>
         <div class="slider-heading">
           <label for="mech-gain">Gaze range</label
           ><output id="mech-gain-value">1.0×</output>

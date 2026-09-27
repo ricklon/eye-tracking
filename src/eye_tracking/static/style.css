@@ -657,6 +657,55 @@ textarea {
 .mechanism code {
   font-size: 11px;
 }
+.mech-toggle {
+  width: 100%;
+  margin: 14px 0 6px;
+  padding: 12px;
+  font-size: 15px;
+}
+.mech-toggle[aria-pressed="true"] {
+  background: #2c5a4a;
+  border-color: var(--mint);
+}
+/* On the stage, so visitors as well as staff can see whether the robot is listening. */
+.robot-link[data-level]:not([data-level="off"]) {
+  font-size: 15px;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 20px;
+  border: 1px solid currentColor;
+}
+.robot-link[data-level]:not([data-level="off"]) i {
+  width: 10px;
+  height: 10px;
+  background: currentColor;
+}
+.robot-link[data-level="following"],
+.robot-link[data-level="ready"] {
+  color: var(--mint);
+}
+.robot-link[data-level="connecting"] {
+  color: #ffdb78;
+}
+.robot-link[data-level="refused"],
+.robot-link[data-level="lost"] {
+  color: #ff8f8f;
+  background: #ff8f8f14;
+}
+.robot-link[data-level="following"] i,
+.robot-link[data-level="lost"] i {
+  animation: robot-pulse 1.2s ease-in-out infinite;
+}
+@keyframes robot-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .robot-link i {
+    animation: none !important;
+  }
+}
 #mech-status.warning,
 #rate.warning {
   color: #ffdb78;
